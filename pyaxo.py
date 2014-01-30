@@ -152,13 +152,6 @@ class Axolotl:
                  'bobs_first_message': bobs_first_message,
                }
 
-    def initOther(self, other_name, other_identityKey, handshakeKey, ratchetKey):
-        if self.mode == None:
-            exit(1)
-        self.state['other_name'] = other_name
-        self.state['DHIr'] = other_identityKey
-        self.state['DHRr'] = ratchetKey
-
     def encrypt(self, plaintext):
         if self.state['DHRs'] == None:
             self.state['DHRs_priv'] = self.genPrivateKey(2048)
