@@ -7,9 +7,9 @@ from pyaxo import Axolotl
 a = Axolotl('Alice')
 b = Axolotl('Bob')
 
-# initialize their states
-a.initState('Bob', b.identityPKey, b.handshakePKey, b.ratchetPKey)
-b.initState('Alice', a.identityPKey, a.handshakePKey, a.ratchetPKey)
+# load states
+a.loadState('Alice', 'Bob')
+b.loadState('Bob', 'Alice')
 
 # tell who is who
 if a.mode:

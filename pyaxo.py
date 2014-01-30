@@ -311,6 +311,8 @@ class Axolotl:
         HKr = '' if not self.state['HKr'] else self.state['HKr']
         CKs = '' if not self.state['CKs'] else self.state['CKs']
         CKr = '' if not self.state['CKr'] else self.state['CKr']
+        bobs_first_message = True if self.state['bobs_first_message'] else False
+        mode = True if self.mode else False
         db = sqlite3.connect('axolotl.db')
         with db:
             cur = db.cursor()
@@ -326,12 +328,16 @@ class Axolotl:
               NHKr TEXT, \
               CKs TEXT, \
               CKr TEXT, \
+              DHIs_priv TEXT, \
               DHIs TEXT, \
               DHIr TEXT, \
+              DHRs_priv TEXT, \
+              DHRs TEXT, \
               Ns INTEGER, \
               Nr INTEGER, \
               PNs INTEGER, \
-              skipped_HK_MK TEXT \
+              bobs_first_message INTEGER, \
+              mode INTEGER \
             )')
             cur.execute('INSERT INTO conversations ( \
               my_identity, \
@@ -344,12 +350,17 @@ class Axolotl:
               NHKr, \
               CKs, \
               CKr, \
+              DHIs_priv, \
               DHIs, \
               DHIr, \
+              DHRs_priv, \
+              DHRs, \
               Ns, \
               Nr, \
-              PNs \
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', \
+              PNs, \
+              bobs_first_message, \
+              mode \
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', \
             ( self.state['name'], \
               self.state['other_name'], \
               self.mkey, \
@@ -360,9 +371,50 @@ class Axolotl:
               binascii.b2a_base64(self.state['NHKr']).strip(), \
               binascii.b2a_base64(CKs).strip(), \
               binascii.b2a_base64(CKr).strip(), \
+              str(self.state['DHIs_priv']), \
               str(self.state['DHIs']), \
               str(self.state['DHIr']), \
+              str(self.state['DHRs_priv']), \
+              str(self.state['DHRs']), \
               self.state['Ns'], \
               self.state['Nr'], \
-              self.state['PNs'] \
+              self.state['PNs'], \
+              self.state['bobs_first_message'], \
+              mode \
             ))
+    def loadState(self, name, other_name):
+        db = sqlite3.connect('axolotl.db')
+
+        with db:
+            cur = db.cursor()
+            cur.execute('SELECT * FROM conversations')
+            rows = cur.fetchall()
+            for row in rows:
+                if row[1] == name and row[2] == other_name:
+                    self.state = \
+                           { 'name': row[1],
+                             'other_name': row[2],
+                             'RK': binascii.a2b_base64(row[4]),
+                             'HKs': binascii.a2b_base64(row[5]),
+                             'HKr': binascii.a2b_base64(row[6]),
+                             'NHKs': binascii.a2b_base64(row[7]),
+                             'NHKr': binascii.a2b_base64(row[8]),
+                             'CKs': binascii.a2b_base64(row[9]),
+                             'CKr': binascii.a2b_base64(row[10]),
+                             'DHIs_priv': int(row[11]),
+                             'DHIs': int(row[12]),
+                             'DHIr': int(row[13]),
+                             'DHRs_priv': int(row[14]),
+                             'DHRs': int(row[15]),
+                             'Ns': row[16],
+                             'Nr': row[17],
+                             'PNs': row[18],
+                             'bobs_first_message': row[19]
+                           }
+                    self.state['bobs_first_message'] = True if self.state['bobs_first_message'] == 1 else False
+                    self.mkey = row[3]
+                    mode = row[20]
+                    self.mode = True if mode == 1 else False
+                    print "state loaded for " + self.state['name'] + " -> " + self.state['other_name']
+                    return # exit at first match
+            return False # if no matches
