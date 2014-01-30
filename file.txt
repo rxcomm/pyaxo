@@ -1,0 +1,12 @@
+Sample paragraph from http://whispersystems.org/blog...
+
+The result is a ratcheting protocol that combines the best of a DH ratchet’s
+“future secrecy” properties with the optimal “forward secrecy” properties from a
+hash ratchet. It also simplifies the wire format and eliminates all the key ID
+book keeping. Nice properties like cryptographically-enforced message ordering
+and replay protection all come for free, without any complex record keeping
+required. The code is simpler, and the protocol security is more robust.
+
+We think this represents an improved cryptographic protocol for asynchronous
+messaging systems like TextSecure. Another asynchronous messaging system, Pond,
+has also incorporated it.
