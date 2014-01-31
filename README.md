@@ -9,7 +9,7 @@ pyaxo also requires the [curve25519-donna][1] package
 for doing the ECDHE calculations.  This package _won't_
 be installed automatically. It can be installed by:
 
-     git clone [https://github.com/agl/curve25519-donna][1]
+     git clone https://github.com/agl/curve25519-donna
      cd curve25519-donna
      sudo python setup.py install
 
