@@ -219,6 +219,7 @@ class Axolotl:
                     header = self.dec(binascii.a2b_base64(row[3]), msg1)
                     body = self.dec(binascii.a2b_base64(row[4]), msg2)
                     if header != '' and body != '':
+                        cur.execute('DELETE FROM skipped_mk WHERE mk = ?', (row[4],))
                         return body
         return False
 
