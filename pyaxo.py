@@ -165,7 +165,7 @@ class Axolotl:
             self.state['Ns'] = 0
         mk = hashlib.sha256(self.state['CKs'] + '0').digest()
         msg1 = self.enc(self.state['HKs'], str(self.state['Ns']).zfill(3) +
-                        str(self.state['PNs']).zfill(3) + str(self.state['DHRs']))
+                        str(self.state['PNs']).zfill(3) + self.state['DHRs'])
         msg2 = self.enc(mk, plaintext)
         msg = str(len(msg1)).zfill(3) + msg1 + msg2
         self.state['Ns'] += 1
@@ -247,7 +247,7 @@ class Axolotl:
                 print 'Undecipherable message'
                 exit(1)
             if self.state['bobs_first_message']:
-                self.state['DHRr'] = int(header[6:], 0)
+                self.state['DHRr'] = header[6:]
                 self.state['RK'] = hashlib.sha256(self.state['RK'] +
                                      self.genDH(self.state['DHRs_priv'], self.state['DHRr'])).digest()
                 self.state['HKs'] = self.state['NHKs']
@@ -267,7 +267,7 @@ class Axolotl:
                 exit(1)
             Np = int(header[:3])
             PNp = int(header[3:6])
-            DHRp = int(header[6:], 0)
+            DHRp = header[6:]
             self.stageSkippedMK(self.state['HKr'], self.state['Nr'], PNp, self.state['CKr'])
             RKp = hashlib.sha256(self.state['RK'] +
                   self.genDH(self.state['DHRs_priv'], self.state['DHRr'])).digest()
