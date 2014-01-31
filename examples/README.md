@@ -1,6 +1,10 @@
 Here is a toy example that you can run to see how the Axolotl ratchet works.
 
-First, create the database by running create_states.py. This will set up the
+First, create the database by running
+
+     ./create_states.py
+
+This will set up the
 database to include both name1 and name2 identities.
 
 (In most cases, the two identities will be different people, and so the logistics
