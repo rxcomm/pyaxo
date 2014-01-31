@@ -3,20 +3,20 @@
 from pyaxo import Axolotl
 
 # create two instance classes
-a = Axolotl('Alice')
-b = Axolotl('Bob')
+a = Axolotl('Angie')
+b = Axolotl('Barb')
 
 # initialize their states
-a.initState('Bob', b.identityPKey, b.handshakePKey, b.ratchetPKey)
-b.initState('Alice', a.identityPKey, a.handshakePKey, a.ratchetPKey)
+a.initState('Barb', b.identityPKey, b.handshakePKey, b.ratchetPKey)
+b.initState('Angie', a.identityPKey, a.handshakePKey, a.ratchetPKey)
 
 # tell who is who
 if a.mode:
-    print 'a = Alice'
-    print 'b = Bob'
+    print 'Angie is Alice-like'
+    print 'Barb is Bob-like'
 else:
-    print 'a = Bob'
-    print 'b = Alice'
+    print 'Angie is Bob-like'
+    print 'Barb is Alice-like'
 
 # send some messages back and forth
 msg0 = a.encrypt('message 0')

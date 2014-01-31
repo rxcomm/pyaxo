@@ -1,33 +1,54 @@
 #!/usr/bin/env python
 
+from dict import DictDiffer
 import binascii
+import os
 from pyaxo import Axolotl
 
-# create two instance classes
-a = Axolotl('Alice')
-b = Axolotl('Bob')
+# need clean database for this example to work
+os.remove('./axolotl.db')
 
-# load states
-a.loadState('Alice', 'Bob')
-b.loadState('Bob', 'Alice')
+# create three instance classes
+tom = Axolotl('Tom')
+dick = Axolotl('Dick')
+harry = Axolotl('Harry')
+
+# initialize Tom and Dick's states
+tom.initState('Dick', dick.identityPKey, dick.handshakePKey, dick.ratchetPKey)
+dick.initState('Tom', tom.identityPKey, tom.handshakePKey, tom.ratchetPKey)
 
 # tell who is who
-if a.mode:
-    print 'a = Alice'
-    print 'b = Bob'
+if tom.mode:
+    print 'Tom is Alice-like'
+    print 'Dick is Bob-like'
 else:
-    print 'a = Bob'
-    print 'b = Alice'
+    print 'Tom is Bob-like'
+    print 'Dick is Alice-like'
 
+print
 
+# get the plaintext
 with open('file.txt', 'r') as f:
     msg = f.read()
 
-ciphertext = a.encrypt(msg)
-s = binascii.b2a_base64(ciphertext)
+# Tom encrypts it to Dick
+ciphertext = tom.encrypt(msg)
 
-lines = [s[i:i+64] for i in xrange(0, len(s), 64)]
-for line in lines:
-    print line
+# save Dick's state prior to decrypting the message
+dick.saveState()
 
-print b.decrypt(ciphertext)
+# Dick decrypts the ciphertext
+print "Dick's decryption..."
+print dick.decrypt(ciphertext)
+
+# now load Dick's state to Harry
+print
+print "Harry is loading Dick's state..."
+harry.loadState('Dick', 'Tom')
+
+# Harry decrypts the ciphertext
+print
+print "Harry's decryption..."
+print harry.decrypt(ciphertext)
+
+# they match, so the two states are the same!!!

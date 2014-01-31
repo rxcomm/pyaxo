@@ -67,6 +67,17 @@ class Axolotl:
         self.staged_HK_mk = {}
         self.state = {}
         self.storeTime = 2*86400 # minimum time (seconds) to store missed ephemeral message keys
+        db = sqlite3.connect('axolotl.db')
+        with db:
+            cur = db.cursor()
+            cur.execute('CREATE TABLE IF NOT EXISTS skipped_mk ( \
+              id INTEGER PRIMARY KEY, \
+              my_identity, \
+              to_identity, \
+              HKr TEXT, \
+              mk TEXT, \
+              timestamp INTEGER \
+            )')
         self.commitSkippedMK()
 
     def tripleDH(self, a, a0, B, B0):
@@ -183,14 +194,6 @@ class Axolotl:
         db = sqlite3.connect('axolotl.db')
         with db:
             cur = db.cursor()
-            cur.execute('CREATE TABLE IF NOT EXISTS skipped_mk ( \
-              id INTEGER PRIMARY KEY, \
-              my_identity, \
-              to_identity, \
-              HKr TEXT, \
-              mk TEXT, \
-              timestamp INTEGER \
-            )')
             for mk, HKr in self.staged_HK_mk.iteritems():
                 cur.execute('INSERT INTO skipped_mk ( \
                   my_identity, \
@@ -246,7 +249,7 @@ class Axolotl:
             CKp, mk = self.stageSkippedMK(self.state['HKr'], self.state['Nr'], Np, self.state['CKr'])
             body = self.dec(mk, msg[3+int(msg[:3]):])
             if not body or body == '':
-                print 'undeciferable location 1'
+                print 'undecipherable location 1'
                 exit(1)
             if self.state['bobs_first_message']:
                 self.state['DHRr'] = int(header[6:], 0)
@@ -265,7 +268,7 @@ class Axolotl:
         else:
             header = self.dec(self.state['NHKr'], msg[3:3+int(msg[:3])])
             if not header or header == '':
-                print 'undeciferable location 2'
+                print 'undecipherable location 2'
                 exit(1)
             Np = int(header[:3])
             PNp = int(header[3:6])
@@ -283,7 +286,7 @@ class Axolotl:
             CKp, mk = self.stageSkippedMK(HKp, 0, Np, CKp)
             body = self.dec(mk, msg[3+int(msg[:3]):])
             if not body or body == '':
-                print 'undeciferable location 3'
+                print 'undecipherable location 3'
                 exit(1)
             self.state['RK'] = RKp
             self.state['HKr'] = HKp
@@ -307,12 +310,10 @@ class Axolotl:
 
 
     def saveState(self):
-        HKs = '' if not self.state['HKs'] else self.state['HKs']
-        HKr = '' if not self.state['HKr'] else self.state['HKr']
-        CKs = '' if not self.state['CKs'] else self.state['CKs']
-        CKr = '' if not self.state['CKr'] else self.state['CKr']
-        bobs_first_message = True if self.state['bobs_first_message'] else False
-        mode = True if self.mode else False
+        DHRs_priv = 0 if self.state['DHRs_priv'] is None else str(self.state['DHRs_priv'])
+        DHRs = 0 if self.state['DHRs'] is None else str(self.state['DHRs'])
+        bobs_first_message = 1 if self.state['bobs_first_message'] else 0
+        mode = 1 if self.mode else 0
         db = sqlite3.connect('axolotl.db')
         with db:
             cur = db.cursor()
@@ -333,6 +334,7 @@ class Axolotl:
               DHIr TEXT, \
               DHRs_priv TEXT, \
               DHRs TEXT, \
+              DHRr TEXT, \
               Ns INTEGER, \
               Nr INTEGER, \
               PNs INTEGER, \
@@ -355,31 +357,33 @@ class Axolotl:
               DHIr, \
               DHRs_priv, \
               DHRs, \
+              DHRr, \
               Ns, \
               Nr, \
               PNs, \
               bobs_first_message, \
               mode \
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', \
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', \
             ( self.state['name'], \
               self.state['other_name'], \
               self.mkey, \
               binascii.b2a_base64(self.state['RK']).strip(), \
-              binascii.b2a_base64(HKs).strip(), \
-              binascii.b2a_base64(HKr).strip(), \
+              binascii.b2a_base64(self.state['HKs']).strip(), \
+              binascii.b2a_base64(self.state['HKr']).strip(), \
               binascii.b2a_base64(self.state['NHKs']).strip(), \
               binascii.b2a_base64(self.state['NHKr']).strip(), \
-              binascii.b2a_base64(CKs).strip(), \
-              binascii.b2a_base64(CKr).strip(), \
+              binascii.b2a_base64(self.state['CKs']).strip(), \
+              binascii.b2a_base64(self.state['CKr']).strip(), \
               str(self.state['DHIs_priv']), \
               str(self.state['DHIs']), \
               str(self.state['DHIr']), \
-              str(self.state['DHRs_priv']), \
-              str(self.state['DHRs']), \
+              DHRs_priv, \
+              DHRs, \
+              str(self.state['DHRr']), \
               self.state['Ns'], \
               self.state['Nr'], \
               self.state['PNs'], \
-              self.state['bobs_first_message'], \
+              bobs_first_message, \
               mode \
             ))
     def loadState(self, name, other_name):
@@ -404,17 +408,23 @@ class Axolotl:
                              'DHIs_priv': int(row[11]),
                              'DHIs': int(row[12]),
                              'DHIr': int(row[13]),
-                             'DHRs_priv': int(row[14]),
-                             'DHRs': int(row[15]),
-                             'Ns': row[16],
-                             'Nr': row[17],
-                             'PNs': row[18],
-                             'bobs_first_message': row[19]
+                             #'DHRs_priv': row[14],
+                             #'DHRs': row[15],
+                             'DHRr': int(row[16]),
+                             'Ns': row[17],
+                             'Nr': row[18],
+                             'PNs': row[19],
+                             #'bobs_first_message': row[20]
                            }
-                    self.state['bobs_first_message'] = True if self.state['bobs_first_message'] == 1 else False
+                    self.state['DHRs_priv'] = None if row[14] == '0' else int(row[14])
+                    self.state['DHRs'] = None if row[15] == '0' else int(row[15])
+                    bobs_first_message = row[20]
+                    self.state['bobs_first_message'] = True if bobs_first_message == 1 \
+                                                       else False
                     self.mkey = row[3]
-                    mode = row[20]
+                    mode = row[21]
                     self.mode = True if mode == 1 else False
-                    print "state loaded for " + self.state['name'] + " -> " + self.state['other_name']
+                    print "state loaded for " + self.state['name'] + " -> " + \
+                           self.state['other_name']
                     return # exit at first match
             return False # if no matches
