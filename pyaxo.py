@@ -29,6 +29,7 @@ import binascii
 import hmac
 import gnupg
 import os
+import sys
 from time import time
 from passlib.utils.pbkdf2 import pbkdf2
 
@@ -311,9 +312,9 @@ class Axolotl:
     def encrypt_file(self, filename):
         with open(filename, 'r') as f:
             plaintext = f.read()
-        msg = binascii.b2a_base64(self.encrypt(plaintext))
+        ciphertext = binascii.b2a_base64(self.encrypt(plaintext))
         with open(filename+'.asc', 'w') as f:
-            lines = [msg[i:i+64] for i in xrange(0, len(msg), 64)]
+            lines = [ciphertext[i:i+64] for i in xrange(0, len(ciphertext), 64)]
             for line in lines:
                 f.write(line+'\n')
 
@@ -323,13 +324,25 @@ class Axolotl:
         plaintext = self.decrypt(ciphertext)
         print plaintext
 
+    def encrypt_pipe(self):
+        plaintext = sys.stdin.read()
+        ciphertext = binascii.b2a_base64(self.encrypt(plaintext))
+        sys.stdout.write(ciphertext)
+        sys.stdout.flush()
+
+    def decrypt_pipe(self):
+        ciphertext = binascii.a2b_base64(sys.stdin.read())
+        plaintext = self.decrypt(ciphertext)
+        sys.stdout.write(plaintext)
+        sys.stdout.flush()
+
     def printKeys(self):
         if self.name == self.state['name']:
             print 'Identity key:\n' + self.identityPKey
             print 'Hanshake key:\n' + self.handshakePKey
             print 'Identity key:\n' + self.ratchetPKey
         else:
-            print "The state doesn't match the name. You must have imported the state."
+            print "The state doesn't match the name."
 
     def saveState(self):
         DHRs_priv = 0 if self.state['DHRs_priv'] is None else str(self.state['DHRs_priv'])
@@ -361,7 +374,13 @@ class Axolotl:
               Nr INTEGER, \
               PNs INTEGER, \
               bobs_first_message INTEGER, \
-              mode INTEGER \
+              mode INTEGER,\
+              identityKey TEXT, \
+              identityPKey TEXT, \
+              handshakeKey TEXT, \
+              handshakePKey TEXT, \
+              ratchetKey TEXT, \
+              ratchetPKey TEXT\
             )')
             cur.execute('INSERT INTO conversations ( \
               my_identity, \
@@ -384,8 +403,14 @@ class Axolotl:
               Nr, \
               PNs, \
               bobs_first_message, \
-              mode \
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', \
+              mode, \
+              identityKey, \
+              identityPKey, \
+              handshakeKey, \
+              handshakePKey, \
+              ratchetKey, \
+              ratchetPKey \
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', \
             ( self.state['name'], \
               self.state['other_name'], \
               self.mkey, \
@@ -406,7 +431,13 @@ class Axolotl:
               self.state['Nr'], \
               self.state['PNs'], \
               bobs_first_message, \
-              mode \
+              mode, \
+              str(self.identityKey), \
+              str(self.identityPKey), \
+              str(self.handshakeKey), \
+              str(self.handshakePKey), \
+              str(self.ratchetKey), \
+              str(self.ratchetPKey) \
             ))
 
     def loadState(self, name, other_name):
@@ -439,6 +470,7 @@ class Axolotl:
                              'PNs': row[19],
                              #'bobs_first_message': row[20]
                            }
+                    self.name = self.state['name']
                     self.state['DHRs_priv'] = None if row[14] == '0' else int(row[14])
                     self.state['DHRs'] = None if row[15] == '0' else int(row[15])
                     bobs_first_message = row[20]
@@ -447,6 +479,12 @@ class Axolotl:
                     self.mkey = row[3]
                     mode = row[21]
                     self.mode = True if mode == 1 else False
+                    self.identityKey = row[22]
+                    self.identityPKey = row[23]
+                    self.handshakeKey = row[24]
+                    self.handshakePKey = row[25]
+                    self.ratchetKey = row[26]
+                    self.ratchetPKey = row[27]
                     print "state loaded for " + self.state['name'] + " -> " + \
                            self.state['other_name']
                     return # exit at first match
