@@ -6,7 +6,10 @@ import os
 from pyaxo import Axolotl
 
 # need clean database for this example to work
-os.remove('./axolotl.db')
+try:
+    os.remove('./axolotl.db')
+except OSError:
+    pass
 
 # create three instance classes
 tom = Axolotl('Tom')

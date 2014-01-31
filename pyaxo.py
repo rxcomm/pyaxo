@@ -308,6 +308,28 @@ class Axolotl:
         self.state['CKr'] = CKp
         return body
 
+    def encrypt_file(self, filename):
+        with open(filename, 'r') as f:
+            plaintext = f.read()
+        msg = binascii.b2a_base64(self.encrypt(plaintext))
+        with open(filename+'.asc', 'w') as f:
+            lines = [msg[i:i+64] for i in xrange(0, len(msg), 64)]
+            for line in lines:
+                f.write(line+'\n')
+
+    def decrypt_file(self, filename):
+        with open(filename, 'r') as f:
+            ciphertext = binascii.a2b_base64(f.read())
+        plaintext = self.decrypt(ciphertext)
+        print plaintext
+
+    def printKeys(self):
+        if self.name == self.state['name']:
+            print 'Identity key:\n' + self.identityPKey
+            print 'Hanshake key:\n' + self.handshakePKey
+            print 'Identity key:\n' + self.ratchetPKey
+        else:
+            print "The state doesn't match the name. You must have imported the state."
 
     def saveState(self):
         DHRs_priv = 0 if self.state['DHRs_priv'] is None else str(self.state['DHRs_priv'])
@@ -386,6 +408,7 @@ class Axolotl:
               bobs_first_message, \
               mode \
             ))
+
     def loadState(self, name, other_name):
         db = sqlite3.connect('axolotl.db')
 
