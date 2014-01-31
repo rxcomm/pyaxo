@@ -1,6 +1,6 @@
 ### Python implementation of the Axolotl ratchet protocol.
 
-###### Overview
+#### Overview
 
 The Axolotl ratchet is a protocol (similar to OTR) that
 provides for perfect forward secrecy in (a)synchronous
