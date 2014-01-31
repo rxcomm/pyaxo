@@ -1,11 +1,10 @@
 """
 pyaxo.py - a python implementation of the axolotl ratchet protocol.
 https://github.com/trevp/axolotl/wiki/newversion
-This version uses straight Diffie-Hellman, rather than ECDH.
 
 Symmetric encryption is done using the python-gnupg module.
 
-Copyright (C) 2014 by David R. Andersen
+Copyright (C) 2014 by David R. Andersen <k0rx@RXcomm.net>
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -32,6 +31,7 @@ import os
 import sys
 from time import time
 from passlib.utils.pbkdf2 import pbkdf2
+from curve25519 import keys
 
 # If a secure random number generator is unavailable, exit with an error.
 try:
@@ -55,15 +55,9 @@ class Axolotl:
 
     def __init__(self, name):
         self.name = name
-        self.generator = 5
-        # 2048-bit MODP from RFC 3526
-        self.prime = 0xFFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74020BBEA63B139B22514A08798E3404DDEF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7EDEE386BFB5A899FA5AE9F24117C4B1FE649286651ECE45B3DC2007CB8A163BF0598DA48361C55D39A69163FA8FD24CF5F83655D23DCA3AD961C62F356208552BB9ED529077096966D670C354E4ABC9804F1746C08CA18217C32905E462E36CE3BE39E772C180E86039B2783A2EC07A28FB5C55DF06F4C52C9DE2BCBF6955817183995497CEA956AE515D2261898FA051015728E5A8AACAA68FFFFFFFFFFFFFFFF
-        self.identityKey = self.genPrivateKey(2048)
-        self.identityPKey = self.genPublicKey(self.identityKey)
-        self.ratchetKey = self.genPrivateKey(2048)
-        self.ratchetPKey = self.genPublicKey(self.ratchetKey)
-        self.handshakeKey = self.genPrivateKey(2048)
-        self.handshakePKey = self.genPublicKey(self.handshakeKey)
+        self.identityKey, self.identityPKey = self.genKey()
+        self.ratchetKey, self.ratchetPKey = self.genKey()
+        self.handshakeKey, self.handshakePKey = self.genKey()
         self.mode = None
         self.staged_HK_mk = {}
         self.state = {}
@@ -85,18 +79,19 @@ class Axolotl:
         if self.mode == None:
             exit(1)
         if self.mode:
-            return hashlib.sha256(self.genDH(a, B0) + self.genDH(a0, B) + self.genDH(a0, B0)).hexdigest()
+            return hashlib.sha256(self.genDH(a, B0) + self.genDH(a0, B) + self.genDH(a0, B0)).digest()
         else:
-            return hashlib.sha256(self.genDH(a0, B) + self.genDH(a, B0) + self.genDH(a0, B0)).hexdigest()
+            return hashlib.sha256(self.genDH(a0, B) + self.genDH(a, B0) + self.genDH(a0, B0)).digest()
 
     def genDH(self, a, B):
-        return str(pow(B, a, self.prime))
+        key = keys.Private(secret=a)
+        return key.get_shared_key(keys.Public(B))
 
-    def genPublicKey(self, a):
-        return pow(self.generator, a, self.prime)
-
-    def genPrivateKey(self, bits):
-        return secure_random(bits)
+    def genKey(self):
+        key = keys.Private()
+        privkey = key.private
+        pubkey = key.get_public().serialize()
+        return privkey, pubkey
 
     def initState(self, other_name, other_identityKey, other_handshakeKey, other_ratchetKey):
         if self.identityPKey < other_identityKey:
@@ -166,8 +161,7 @@ class Axolotl:
 
     def encrypt(self, plaintext):
         if self.state['DHRs'] == None:
-            self.state['DHRs_priv'] = self.genPrivateKey(2048)
-            self.state['DHRs'] = self.genPublicKey(self.state['DHRs_priv'])
+            self.state['DHRs_priv'], self.state['DHRs'] = self.genKey()
             self.state['Ns'] = 0
         mk = hashlib.sha256(self.state['CKs'] + '0').digest()
         msg1 = self.enc(self.state['HKs'], str(self.state['Ns']).zfill(3) +
@@ -338,15 +332,15 @@ class Axolotl:
 
     def printKeys(self):
         if self.name == self.state['name']:
-            print 'Identity key:\n' + self.identityPKey
-            print 'Hanshake key:\n' + self.handshakePKey
-            print 'Identity key:\n' + self.ratchetPKey
+            print 'Identity key:\n' + binascii.b2a_base64(self.identityPKey)
+            print 'Handshake key:\n' + binascii.b2a_base64(self.handshakePKey)
+            print 'Identity key:\n' + binascii.b2a_base64(self.ratchetPKey)
         else:
             print "The state doesn't match the name."
 
     def saveState(self):
-        DHRs_priv = 0 if self.state['DHRs_priv'] is None else str(self.state['DHRs_priv'])
-        DHRs = 0 if self.state['DHRs'] is None else str(self.state['DHRs'])
+        DHRs_priv = 0 if self.state['DHRs_priv'] is None else binascii.b2a_base64(self.state['DHRs_priv']).strip()
+        DHRs = 0 if self.state['DHRs'] is None else binascii.b2a_base64(self.state['DHRs']).strip()
         bobs_first_message = 1 if self.state['bobs_first_message'] else 0
         mode = 1 if self.mode else 0
         db = sqlite3.connect('axolotl.db')
@@ -413,7 +407,7 @@ class Axolotl:
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', \
             ( self.state['name'], \
               self.state['other_name'], \
-              self.mkey, \
+              binascii.b2a_base64(self.mkey).strip(), \
               binascii.b2a_base64(self.state['RK']).strip(), \
               binascii.b2a_base64(self.state['HKs']).strip(), \
               binascii.b2a_base64(self.state['HKr']).strip(), \
@@ -421,23 +415,23 @@ class Axolotl:
               binascii.b2a_base64(self.state['NHKr']).strip(), \
               binascii.b2a_base64(self.state['CKs']).strip(), \
               binascii.b2a_base64(self.state['CKr']).strip(), \
-              str(self.state['DHIs_priv']), \
-              str(self.state['DHIs']), \
-              str(self.state['DHIr']), \
+              binascii.b2a_base64(self.state['DHIs_priv']).strip(), \
+              binascii.b2a_base64(self.state['DHIs']).strip(), \
+              binascii.b2a_base64(self.state['DHIr']).strip(), \
               DHRs_priv, \
               DHRs, \
-              str(self.state['DHRr']), \
+              binascii.b2a_base64(self.state['DHRr']).strip(), \
               self.state['Ns'], \
               self.state['Nr'], \
               self.state['PNs'], \
               bobs_first_message, \
               mode, \
-              str(self.identityKey), \
-              str(self.identityPKey), \
-              str(self.handshakeKey), \
-              str(self.handshakePKey), \
-              str(self.ratchetKey), \
-              str(self.ratchetPKey) \
+              binascii.b2a_base64(self.identityKey).strip(), \
+              binascii.b2a_base64(self.identityPKey).strip(), \
+              binascii.b2a_base64(self.handshakeKey).strip(), \
+              binascii.b2a_base64(self.handshakePKey).strip(), \
+              binascii.b2a_base64(self.ratchetKey).strip(), \
+              binascii.b2a_base64(self.ratchetPKey).strip() \
             ))
 
     def loadState(self, name, other_name):
@@ -459,33 +453,28 @@ class Axolotl:
                              'NHKr': binascii.a2b_base64(row[8]),
                              'CKs': binascii.a2b_base64(row[9]),
                              'CKr': binascii.a2b_base64(row[10]),
-                             'DHIs_priv': int(row[11]),
-                             'DHIs': int(row[12]),
-                             'DHIr': int(row[13]),
-                             #'DHRs_priv': row[14],
-                             #'DHRs': row[15],
-                             'DHRr': int(row[16]),
+                             'DHIs_priv': binascii.a2b_base64(row[11]),
+                             'DHIs': binascii.a2b_base64(row[12]),
+                             'DHIr': binascii.a2b_base64(row[13]),
+                             'DHRr': binascii.a2b_base64(row[16]),
                              'Ns': row[17],
                              'Nr': row[18],
                              'PNs': row[19],
-                             #'bobs_first_message': row[20]
                            }
                     self.name = self.state['name']
-                    self.state['DHRs_priv'] = None if row[14] == '0' else int(row[14])
-                    self.state['DHRs'] = None if row[15] == '0' else int(row[15])
+                    self.state['DHRs_priv'] = None if row[14] == '0' else binascii.a2b_base64(row[14])
+                    self.state['DHRs'] = None if row[15] == '0' else binascii.a2b_base64(row[15])
                     bobs_first_message = row[20]
                     self.state['bobs_first_message'] = True if bobs_first_message == 1 \
                                                        else False
-                    self.mkey = row[3]
+                    self.mkey = binascii.a2b_base64(row[3])
                     mode = row[21]
                     self.mode = True if mode == 1 else False
-                    self.identityKey = row[22]
-                    self.identityPKey = row[23]
-                    self.handshakeKey = row[24]
-                    self.handshakePKey = row[25]
-                    self.ratchetKey = row[26]
-                    self.ratchetPKey = row[27]
-                    #print "state loaded for " + self.state['name'] + " -> " + \
-                    #       self.state['other_name']
+                    self.identityKey = binascii.a2b_base64(row[22])
+                    self.identityPKey = binascii.a2b_base64(row[23])
+                    self.handshakeKey = binascii.a2b_base64(row[24])
+                    self.handshakePKey = binascii.a2b_base64(row[25])
+                    self.ratchetKey = binascii.a2b_base64(row[26])
+                    self.ratchetPKey = binascii.a2b_base64(row[27])
                     return # exit at first match
             return False # if no matches
