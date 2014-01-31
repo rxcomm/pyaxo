@@ -250,7 +250,7 @@ class Axolotl:
             CKp, mk = self.stageSkippedMK(self.state['HKr'], self.state['Nr'], Np, self.state['CKr'])
             body = self.dec(mk, msg[3+int(msg[:3]):])
             if not body or body == '':
-                print 'undecipherable location 1'
+                print 'Undecipherable message'
                 exit(1)
             if self.state['bobs_first_message']:
                 self.state['DHRr'] = int(header[6:], 0)
@@ -269,7 +269,7 @@ class Axolotl:
         else:
             header = self.dec(self.state['NHKr'], msg[3:3+int(msg[:3])])
             if not header or header == '':
-                print 'undecipherable location 2'
+                print 'Undecipherable message'
                 exit(1)
             Np = int(header[:3])
             PNp = int(header[3:6])
@@ -287,7 +287,7 @@ class Axolotl:
             CKp, mk = self.stageSkippedMK(HKp, 0, Np, CKp)
             body = self.dec(mk, msg[3+int(msg[:3]):])
             if not body or body == '':
-                print 'undecipherable location 3'
+                print 'Undecipherable message'
                 exit(1)
             self.state['RK'] = RKp
             self.state['HKr'] = HKp
@@ -485,7 +485,7 @@ class Axolotl:
                     self.handshakePKey = row[25]
                     self.ratchetKey = row[26]
                     self.ratchetPKey = row[27]
-                    print "state loaded for " + self.state['name'] + " -> " + \
-                           self.state['other_name']
+                    #print "state loaded for " + self.state['name'] + " -> " + \
+                    #       self.state['other_name']
                     return # exit at first match
             return False # if no matches
