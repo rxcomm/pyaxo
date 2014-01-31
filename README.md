@@ -14,7 +14,7 @@ be installed automatically. It can be installed by:
      sudo python setup.py install
 
 There are several examples showing usage. There are also
-```encrypt_pipe()``` and ```decrypt_pipe() methods for use in
+```encrypt_pipe()``` and ```decrypt_pipe()``` methods for use in
 certain applications. I haven't put together an example using
 them yet, but it should be straightforward.
 
