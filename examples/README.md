@@ -21,3 +21,6 @@ You can then decrypt the file using the command:
 
 Try encrypting multiple files in both directions. Decrypt them out of order, and try
 to cause other mayhem. pyaxo should sort it all out for you.
+
+One thing you may notice is that you can only decrypt a file once - after that,
+because of the perfect forward secrecy provided by Axolotl, the key is __gone__!
