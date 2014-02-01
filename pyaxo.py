@@ -348,7 +348,6 @@ class Axolotl:
         with db:
             cur = db.cursor()
             cur.execute('CREATE TABLE IF NOT EXISTS conversations ( \
-              id INTEGER PRIMARY KEY, \
               my_identity TEXT, \
               other_identity TEXT, \
               master_key TEXT, \
@@ -445,39 +444,39 @@ class Axolotl:
             cur.execute('SELECT * FROM conversations')
             rows = cur.fetchall()
             for row in rows:
-                if row[1] == name and row[2] == other_name:
+                if row[0] == name and row[1] == other_name:
                     self.state = \
-                           { 'name': row[1],
-                             'other_name': row[2],
-                             'RK': binascii.a2b_base64(row[4]),
-                             'HKs': binascii.a2b_base64(row[5]),
-                             'HKr': binascii.a2b_base64(row[6]),
-                             'NHKs': binascii.a2b_base64(row[7]),
-                             'NHKr': binascii.a2b_base64(row[8]),
-                             'CKs': binascii.a2b_base64(row[9]),
-                             'CKr': binascii.a2b_base64(row[10]),
-                             'DHIs_priv': binascii.a2b_base64(row[11]),
-                             'DHIs': binascii.a2b_base64(row[12]),
-                             'DHIr': binascii.a2b_base64(row[13]),
-                             'DHRr': binascii.a2b_base64(row[16]),
-                             'Ns': row[17],
-                             'Nr': row[18],
-                             'PNs': row[19],
+                           { 'name': row[0],
+                             'other_name': row[1],
+                             'RK': binascii.a2b_base64(row[3]),
+                             'HKs': binascii.a2b_base64(row[4]),
+                             'HKr': binascii.a2b_base64(row[5]),
+                             'NHKs': binascii.a2b_base64(row[6]),
+                             'NHKr': binascii.a2b_base64(row[7]),
+                             'CKs': binascii.a2b_base64(row[8]),
+                             'CKr': binascii.a2b_base64(row[9]),
+                             'DHIs_priv': binascii.a2b_base64(row[10]),
+                             'DHIs': binascii.a2b_base64(row[11]),
+                             'DHIr': binascii.a2b_base64(row[12]),
+                             'DHRr': binascii.a2b_base64(row[15]),
+                             'Ns': row[16],
+                             'Nr': row[17],
+                             'PNs': row[18],
                            }
                     self.name = self.state['name']
-                    self.state['DHRs_priv'] = None if row[14] == '0' else binascii.a2b_base64(row[14])
-                    self.state['DHRs'] = None if row[15] == '0' else binascii.a2b_base64(row[15])
-                    bobs_first_message = row[20]
+                    self.state['DHRs_priv'] = None if row[13] == '0' else binascii.a2b_base64(row[13])
+                    self.state['DHRs'] = None if row[14] == '0' else binascii.a2b_base64(row[14])
+                    bobs_first_message = row[19]
                     self.state['bobs_first_message'] = True if bobs_first_message == 1 \
                                                        else False
-                    self.mkey = binascii.a2b_base64(row[3])
-                    mode = row[21]
+                    self.mkey = binascii.a2b_base64(row[2])
+                    mode = row[20]
                     self.mode = True if mode == 1 else False
-                    self.identityKey = binascii.a2b_base64(row[22])
-                    self.identityPKey = binascii.a2b_base64(row[23])
-                    self.handshakeKey = binascii.a2b_base64(row[24])
-                    self.handshakePKey = binascii.a2b_base64(row[25])
-                    self.ratchetKey = binascii.a2b_base64(row[26])
-                    self.ratchetPKey = binascii.a2b_base64(row[27])
+                    self.identityKey = binascii.a2b_base64(row[21])
+                    self.identityPKey = binascii.a2b_base64(row[22])
+                    self.handshakeKey = binascii.a2b_base64(row[23])
+                    self.handshakePKey = binascii.a2b_base64(row[24])
+                    self.ratchetKey = binascii.a2b_base64(row[25])
+                    self.ratchetPKey = binascii.a2b_base64(row[26])
                     return # exit at first match
             return False # if no matches
