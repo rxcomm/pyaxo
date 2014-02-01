@@ -377,7 +377,9 @@ class Axolotl:
               ratchetKey TEXT, \
               ratchetPKey TEXT\
             )')
-            cur.execute('INSERT INTO conversations ( \
+            cur.execute('CREATE UNIQUE INDEX IF NOT EXISTS \
+                         conversation_route ON conversations (my_identity, other_identity)')
+            cur.execute('REPLACE INTO conversations ( \
               my_identity, \
               other_identity, \
               master_key, \
