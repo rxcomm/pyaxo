@@ -72,6 +72,8 @@ class Axolotl:
               mk TEXT, \
               timestamp INTEGER \
             )')
+            cur.execute('CREATE UNIQUE INDEX IF NOT EXISTS \
+                         message_keys ON skipped_mk (mk)')
             cur.execute('CREATE TABLE IF NOT EXISTS conversations ( \
               my_identity TEXT, \
               other_identity TEXT, \
@@ -222,7 +224,7 @@ class Axolotl:
         with db:
             cur = db.cursor()
             for mk, HKr in self.staged_HK_mk.iteritems():
-                cur.execute('INSERT INTO skipped_mk ( \
+                cur.execute('REPLACE INTO skipped_mk ( \
                   my_identity, \
                   to_identity, \
                   HKr, \
