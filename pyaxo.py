@@ -126,7 +126,7 @@ class Axolotl:
         return privkey, pubkey
 
     def initState(self, other_name, other_identityKey, other_handshakeKey, other_ratchetKey):
-        print 'Confirm ' + other_name + ' has key fingerprint:\n'
+        print 'Confirm ' + other_name + ' has identity key fingerprint:\n'
         fingerprint = hashlib.sha224(other_identityKey).hexdigest().upper()
         fprint = ''
         for i in range(0, len(fingerprint), 4):
@@ -379,9 +379,15 @@ class Axolotl:
         sys.stdout.flush()
 
     def printKeys(self):
-        print 'Your Identity key:\n' + binascii.b2a_base64(self.identityPKey)
-        print 'Your Handshake key:\n' + binascii.b2a_base64(self.handshakePKey)
-        print 'Your Ratchet key:\n' + binascii.b2a_base64(self.ratchetPKey)
+        print 'Your Identity key is:\n' + binascii.b2a_base64(self.identityPKey)
+        fingerprint = hashlib.sha224(self.identityPKey).hexdigest().upper()
+        fprint = ''
+        for i in range(0, len(fingerprint), 4):
+            fprint += fingerprint[i:i+2] + ':'
+        print 'Your identity key fingerprint is: '
+        print fprint[:-1] + '\n'
+        print 'Your Handshake key is:\n' + binascii.b2a_base64(self.handshakePKey)
+        print 'Your Ratchet key is:\n' + binascii.b2a_base64(self.ratchetPKey)
 
     def saveState(self):
         DHRs_priv = 0 if self.state['DHRs_priv'] is None else binascii.b2a_base64(self.state['DHRs_priv']).strip()
