@@ -126,6 +126,19 @@ class Axolotl:
         return privkey, pubkey
 
     def initState(self, other_name, other_identityKey, other_handshakeKey, other_ratchetKey):
+        print 'Confirm ' + other_name + ' has key fingerprint:\n'
+        fingerprint = hashlib.sha224(other_identityKey).hexdigest().upper()
+        fprint = ''
+        for i in range(0, len(fingerprint), 4):
+            fprint += fingerprint[i:i+2] + ':'
+        print fprint[:-1] + '\n'
+        print 'Be sure to verify this fingerprint with ' + other_name + \
+              ' by some out-of-band method!'
+        print 'Otherwise, you may be subject to a Man-in-the-middle attack!\n'
+        ans = raw_input('Confirm? y/N: ').strip()
+        if ans != 'y':
+            print 'Key fingerprint not confirmed - exiting...'
+            exit()
         if self.identityPKey < other_identityKey:
             self.mode = True
         else:
@@ -366,12 +379,9 @@ class Axolotl:
         sys.stdout.flush()
 
     def printKeys(self):
-        if self.name == self.state['name']:
-            print 'Identity key:\n' + binascii.b2a_base64(self.identityPKey)
-            print 'Handshake key:\n' + binascii.b2a_base64(self.handshakePKey)
-            print 'Identity key:\n' + binascii.b2a_base64(self.ratchetPKey)
-        else:
-            print "The state doesn't match the name."
+        print 'Your Identity key:\n' + binascii.b2a_base64(self.identityPKey)
+        print 'Your Handshake key:\n' + binascii.b2a_base64(self.handshakePKey)
+        print 'Your Ratchet key:\n' + binascii.b2a_base64(self.ratchetPKey)
 
     def saveState(self):
         DHRs_priv = 0 if self.state['DHRs_priv'] is None else binascii.b2a_base64(self.state['DHRs_priv']).strip()
