@@ -66,7 +66,6 @@ class Axolotl:
         with db:
             cur = db.cursor()
             cur.execute('CREATE TABLE IF NOT EXISTS skipped_mk ( \
-              id INTEGER PRIMARY KEY, \
               my_identity, \
               to_identity, \
               HKr TEXT, \
@@ -213,13 +212,13 @@ class Axolotl:
             cur.execute('SELECT * FROM skipped_mk')
             rows = cur.fetchall()
             for row in rows:
-                if name == row[1] and other_name == row[2]:
+                if name == row[0] and other_name == row[1]:
                     msg1 = msg[3:3+int(msg[:3])]
                     msg2 = msg[3+int(msg[:3]):]
-                    header = self.dec(binascii.a2b_base64(row[3]), msg1)
-                    body = self.dec(binascii.a2b_base64(row[4]), msg2)
+                    header = self.dec(binascii.a2b_base64(row[2]), msg1)
+                    body = self.dec(binascii.a2b_base64(row[3]), msg2)
                     if header != '' and body != '':
-                        cur.execute('DELETE FROM skipped_mk WHERE mk = ?', (row[4],))
+                        cur.execute('DELETE FROM skipped_mk WHERE mk = ?', (row[3],))
                         return body
         return False
 
