@@ -9,7 +9,9 @@ import sys
 
 your_name = raw_input('What is your name? ').strip()
 
-a = Axolotl(your_name)
+# specify dbname with kwarg - default dbname is axolotl.db
+# db passphrase will be prompted for - it can be specified here with dbpassprase kwarg
+a = Axolotl(your_name, dbname=your_name+'.db')
 
 try:
     if sys.argv[1] == '-e':

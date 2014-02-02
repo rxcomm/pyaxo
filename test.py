@@ -2,9 +2,9 @@
 
 from pyaxo import Axolotl
 
-# create two instance classes
-a = Axolotl('Angie')
-b = Axolotl('Barb')
+# create two instance classes with unencrypted database
+a = Axolotl('Angie', dbpassphrase=None)
+b = Axolotl('Barb', dbpassphrase=None)
 
 # initialize their states
 a.initState('Barb', b.state['DHIs'], b.handshakePKey, b.state['DHRs'], verify=False)

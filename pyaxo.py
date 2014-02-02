@@ -29,6 +29,8 @@ import hmac
 import gnupg
 import os
 import sys
+import zlib
+from getpass import getpass
 from time import time
 from passlib.utils.pbkdf2 import pbkdf2
 from curve25519 import keys
@@ -53,9 +55,18 @@ gpg.encoding = 'utf-8'
 
 class Axolotl:
 
-    def __init__(self, name, dbname='axolotl.db'):
+    def __init__(self, name, dbname='axolotl.db', dbpassphrase=''):
         self.name = name
         self.dbname = dbname
+        if dbpassphrase != '' or dbpassphrase is None:
+            self.dbpassphrase = dbpassphrase
+        else:
+            self.dbpassphrase = getpass('Database passphrase for '+ self.name + ': ').strip()
+        try:
+            self.db = self.openDB()
+        except sqlite3.OperationalError:
+            print 'Bad sql! Is the database encrypted?'
+            exit(1)
         self.mode = None
         self.staged_HK_mk = {}
         self.state = {}
@@ -63,9 +74,8 @@ class Axolotl:
         self.state['DHRs_priv'], self.state['DHRs'] = self.genKey()
         self.handshakeKey, self.handshakePKey = self.genKey()
         self.storeTime = 2*86400 # minimum time (seconds) to store missed ephemeral message keys
-        db = sqlite3.connect(self.dbname)
-        with db:
-            cur = db.cursor()
+        with self.db:
+            cur = self.db.cursor()
             cur.execute('CREATE TABLE IF NOT EXISTS skipped_mk ( \
               my_identity, \
               to_identity, \
@@ -224,9 +234,8 @@ class Axolotl:
 
     def commitSkippedMK(self):
         timestamp = int(time())
-        db = sqlite3.connect(self.dbname)
-        with db:
-            cur = db.cursor()
+        with self.db:
+            cur = self.db.cursor()
             for mk, HKr in self.staged_HK_mk.iteritems():
                 cur.execute('REPLACE INTO skipped_mk ( \
                   my_identity, \
@@ -245,9 +254,8 @@ class Axolotl:
             cur.execute('DELETE FROM skipped_mk WHERE timestamp < ?', (rowtime,))
 
     def trySkippedMK(self, msg, name, other_name):
-        db = sqlite3.connect(self.dbname)
-        with db:
-            cur = db.cursor()
+        with self.db:
+            cur = self.db.cursor()
             cur.execute('SELECT * FROM skipped_mk')
             rows = cur.fetchall()
             for row in rows:
@@ -388,9 +396,8 @@ class Axolotl:
         DHRs = 0 if self.state['DHRs'] is None else binascii.b2a_base64(self.state['DHRs']).strip()
         bobs_first_message = 1 if self.state['bobs_first_message'] else 0
         mode = 1 if self.mode else 0
-        db = sqlite3.connect(self.dbname)
-        with db:
-            cur = db.cursor()
+        with self.db:
+            cur = self.db.cursor()
             cur.execute('REPLACE INTO conversations ( \
               my_identity, \
               other_identity, \
@@ -434,13 +441,17 @@ class Axolotl:
               bobs_first_message, \
               mode \
             ))
+        self.closeDB()
 
     def loadState(self, name, other_name):
-        db = sqlite3.connect(self.dbname)
-
-        with db:
-            cur = db.cursor()
-            cur.execute('SELECT * FROM conversations')
+        self.db = self.openDB()
+        with self.db:
+            cur = self.db.cursor()
+            try:
+                cur.execute('SELECT * FROM conversations')
+            except sqlite3.OperationalError:
+                print 'Bad sql! Is the database encrypted?'
+                exit(1)
             rows = cur.fetchall()
             for row in rows:
                 if row[0] == name and row[1] == other_name:
@@ -472,3 +483,44 @@ class Axolotl:
                     self.mode = True if mode == 1 else False
                     return # exit at first match
             return False # if no matches
+
+    def openDB(self):
+
+        db = sqlite3.connect(':memory:')
+
+        try:
+            with open(self.dbname): pass
+            with open(self.dbname, 'rb') as f:
+                with open(self.dbname): pass
+                if self.dbpassphrase is not None:
+                    sql = gpg.decrypt_file(f, passphrase=self.dbpassphrase)
+                    if sql and sql != '':
+                        sql = zlib.decompress(sql.data)
+                        db.cursor().executescript(str(sql))
+                        return db
+                    else:
+                        print 'Bad passphrase!'
+                        exit(1)
+                else:
+                    sql = f.read()
+                    db.cursor().executescript(str(sql))
+                    return db
+        except IOError:
+            return db
+
+    def closeDB(self):
+
+        sql = ''
+        for item in self.db.iterdump():
+            sql = sql+item+'\n'
+        print sql
+        if self.dbpassphrase is not None:
+            sql = zlib.compress(sql)
+            crypt_sql = gpg.encrypt(sql, recipients=None, symmetric='AES256', armor=False,
+                                always_trust=True, passphrase=self.dbpassphrase)
+            with open(self.dbname, 'wb') as f:
+                f.write(crypt_sql.data)
+        else:
+            with open(self.dbname, 'w') as f:
+                f.write(sql)
+

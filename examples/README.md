@@ -4,11 +4,9 @@ First, create the database by running
 
      ./create_states.py
 
-This will set up the
-database to include both name1 and name2 identities.
-
-(In most cases, the two identities will be different people, and so the logistics
-of doing this will be simpler).
+This will set up two databases - one for each of the name1 and name2 identities.
+The databases will be unencrypted. You can set a passphrase with the
+dbpassphrase kwarg, or leave it out to have the system prompt for a passphrase.
 
 Then create several text files to encrypt.  Encrypt a file from name1 -> name2
 using the following command:

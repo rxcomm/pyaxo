@@ -3,7 +3,7 @@
 from pyaxo import Axolotl
 import sys
 
-a = Axolotl('name1')
+a = Axolotl('name1', dbname='name1.db', dbpassphrase=None)
 a.loadState('name1', 'name2')
 
 if sys.argv[1] == '-e':

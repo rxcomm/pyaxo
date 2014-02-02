@@ -10,7 +10,9 @@ try:
 except OSError:
     pass
 
-# create three instance classes
+# create three instance classes - axolotl will prompt for database passphrases
+# Note that dick and harry's passphrases must match or harry won't be able to
+# load dick's saved database
 tom = Axolotl('Tom')
 dick = Axolotl('Dick')
 harry = Axolotl('Harry')
