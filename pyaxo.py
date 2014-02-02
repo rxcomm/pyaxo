@@ -489,9 +489,7 @@ class Axolotl:
         db = sqlite3.connect(':memory:')
 
         try:
-            with open(self.dbname): pass
             with open(self.dbname, 'rb') as f:
-                with open(self.dbname): pass
                 if self.dbpassphrase is not None:
                     sql = gpg.decrypt_file(f, passphrase=self.dbpassphrase)
                     if sql and sql != '':
