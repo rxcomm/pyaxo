@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-from dict import DictDiffer
 import binascii
 import os
 from pyaxo import Axolotl
