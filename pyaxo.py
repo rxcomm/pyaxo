@@ -513,7 +513,6 @@ class Axolotl:
         sql = ''
         for item in self.db.iterdump():
             sql = sql+item+'\n'
-        print sql
         if self.dbpassphrase is not None:
             sql = zlib.compress(sql)
             crypt_sql = gpg.encrypt(sql, recipients=None, symmetric='AES256', armor=False,
