@@ -13,8 +13,8 @@ except OSError:
 a = Axolotl('name1')
 b = Axolotl('name2')
 
-a.initState('name2', b.identityPKey, b.handshakePKey, b.ratchetPKey)
-b.initState('name1', a.identityPKey, a.handshakePKey, a.ratchetPKey)
+a.initState('name2', b.state['DHIs'], b.handshakePKey, b.state['DHRs'], verify=False)
+b.initState('name1', a.state['DHIs'], a.handshakePKey, a.state['DHRs'], verify=False)
 
 a.saveState()
 b.saveState()

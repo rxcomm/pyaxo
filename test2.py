@@ -7,8 +7,8 @@ a = Axolotl('Angie')
 b = Axolotl('Barb')
 
 # initialize their states
-a.initState('Barb', b.identityPKey, b.handshakePKey, b.ratchetPKey)
-b.initState('Angie', a.identityPKey, a.handshakePKey, a.ratchetPKey)
+a.initState('Barb', b.state['DHIs'], b.handshakePKey, b.state['DHRs'], verify=False)
+b.initState('Angie', a.state['DHIs'], a.handshakePKey, a.state['DHRs'], verify=False)
 
 # tell who is who
 if a.mode:

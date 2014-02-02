@@ -53,16 +53,17 @@ gpg.encoding = 'utf-8'
 
 class Axolotl:
 
-    def __init__(self, name):
+    def __init__(self, name, dbname='axolotl.db'):
         self.name = name
-        self.identityKey, self.identityPKey = self.genKey()
-        self.ratchetKey, self.ratchetPKey = self.genKey()
-        self.handshakeKey, self.handshakePKey = self.genKey()
+        self.dbname = dbname
         self.mode = None
         self.staged_HK_mk = {}
         self.state = {}
+        self.state['DHIs_priv'], self.state['DHIs'] = self.genKey()
+        self.state['DHRs_priv'], self.state['DHRs'] = self.genKey()
+        self.handshakeKey, self.handshakePKey = self.genKey()
         self.storeTime = 2*86400 # minimum time (seconds) to store missed ephemeral message keys
-        db = sqlite3.connect('axolotl.db')
+        db = sqlite3.connect(self.dbname)
         with db:
             cur = db.cursor()
             cur.execute('CREATE TABLE IF NOT EXISTS skipped_mk ( \
@@ -77,7 +78,6 @@ class Axolotl:
             cur.execute('CREATE TABLE IF NOT EXISTS conversations ( \
               my_identity TEXT, \
               other_identity TEXT, \
-              master_key TEXT, \
               RK TEXT, \
               HKs TEXT, \
               HKr TEXT, \
@@ -95,13 +95,7 @@ class Axolotl:
               Nr INTEGER, \
               PNs INTEGER, \
               bobs_first_message INTEGER, \
-              mode INTEGER,\
-              identityKey TEXT, \
-              identityPKey TEXT, \
-              handshakeKey TEXT, \
-              handshakePKey TEXT, \
-              ratchetKey TEXT, \
-              ratchetPKey TEXT\
+              mode INTEGER \
             )')
             cur.execute('CREATE UNIQUE INDEX IF NOT EXISTS \
                          conversation_route ON conversations (my_identity, other_identity)')
@@ -125,58 +119,52 @@ class Axolotl:
         pubkey = key.get_public().serialize()
         return privkey, pubkey
 
-    def initState(self, other_name, other_identityKey, other_handshakeKey, other_ratchetKey):
-        print 'Confirm ' + other_name + ' has identity key fingerprint:\n'
-        fingerprint = hashlib.sha224(other_identityKey).hexdigest().upper()
-        fprint = ''
-        for i in range(0, len(fingerprint), 4):
-            fprint += fingerprint[i:i+2] + ':'
-        print fprint[:-1] + '\n'
-        print 'Be sure to verify this fingerprint with ' + other_name + \
-              ' by some out-of-band method!'
-        print 'Otherwise, you may be subject to a Man-in-the-middle attack!\n'
-        ans = raw_input('Confirm? y/N: ').strip()
-        if ans != 'y':
-            print 'Key fingerprint not confirmed - exiting...'
-            exit()
-        if self.identityPKey < other_identityKey:
+    def initState(self, other_name, other_identityKey, other_handshakeKey,
+                  other_ratchetKey, verify=True):
+        if verify:
+            print 'Confirm ' + other_name + ' has identity key fingerprint:\n'
+            fingerprint = hashlib.sha224(other_identityKey).hexdigest().upper()
+            fprint = ''
+            for i in range(0, len(fingerprint), 4):
+                fprint += fingerprint[i:i+2] + ':'
+            print fprint[:-1] + '\n'
+            print 'Be sure to verify this fingerprint with ' + other_name + \
+                  ' by some out-of-band method!'
+            print 'Otherwise, you may be subject to a Man-in-the-middle attack!\n'
+            ans = raw_input('Confirm? y/N: ').strip()
+            if ans != 'y':
+                print 'Key fingerprint not confirmed - exiting...'
+                exit()
+        if self.state['DHIs'] < other_identityKey:
             self.mode = True
         else:
             self.mode = False
         DHIr = other_identityKey
         DHRr = other_ratchetKey
-        self.mkey = self.tripleDH(self.identityKey, self.handshakeKey,
+        mkey = self.tripleDH(self.state['DHIs_priv'], self.handshakeKey,
                                   other_identityKey, other_handshakeKey)
         if self.mode == None: # mode not selected
             exit(1)
         if self.mode: # alice mode
-            RK = pbkdf2(self.mkey, hex(00), 10, prf='hmac-sha256')
-            HKs = pbkdf2(self.mkey, hex(01), 10, prf='hmac-sha256')
-            HKr = pbkdf2(self.mkey, hex(02), 10, prf='hmac-sha256')
-            NHKs = pbkdf2(self.mkey, hex(03), 10, prf='hmac-sha256')
-            NHKr = pbkdf2(self.mkey, hex(04), 10, prf='hmac-sha256')
-            CKs = pbkdf2(self.mkey, hex(05), 10, prf='hmac-sha256')
-            CKr = pbkdf2(self.mkey, hex(06), 10, prf='hmac-sha256')
-            DHIs_priv = self.identityKey
-            DHIs = self.identityPKey
-            DHRs_priv = self.ratchetKey
-            DHRs = self.ratchetPKey
+            RK = pbkdf2(mkey, hex(00), 10, prf='hmac-sha256')
+            HKs = pbkdf2(mkey, hex(01), 10, prf='hmac-sha256')
+            HKr = pbkdf2(mkey, hex(02), 10, prf='hmac-sha256')
+            NHKs = pbkdf2(mkey, hex(03), 10, prf='hmac-sha256')
+            NHKr = pbkdf2(mkey, hex(04), 10, prf='hmac-sha256')
+            CKs = pbkdf2(mkey, hex(05), 10, prf='hmac-sha256')
+            CKr = pbkdf2(mkey, hex(06), 10, prf='hmac-sha256')
             Ns = 0
             Nr = 0
             PNs = 0
             bobs_first_message = False
         else: # bob mode
-            RK = pbkdf2(self.mkey, hex(00), 10, prf='hmac-sha256')
-            HKs = pbkdf2(self.mkey, hex(02), 10, prf='hmac-sha256')
-            HKr = pbkdf2(self.mkey, hex(01), 10, prf='hmac-sha256')
-            NHKs = pbkdf2(self.mkey, hex(04), 10, prf='hmac-sha256')
-            NHKr = pbkdf2(self.mkey, hex(03), 10, prf='hmac-sha256')
-            CKs = pbkdf2(self.mkey, hex(06), 10, prf='hmac-sha256')
-            CKr = pbkdf2(self.mkey, hex(05), 10, prf='hmac-sha256')
-            DHIs_priv = self.identityKey
-            DHIs = self.identityPKey
-            DHRs_priv = self.ratchetKey
-            DHRs = self.ratchetPKey
+            RK = pbkdf2(mkey, hex(00), 10, prf='hmac-sha256')
+            HKs = pbkdf2(mkey, hex(02), 10, prf='hmac-sha256')
+            HKr = pbkdf2(mkey, hex(01), 10, prf='hmac-sha256')
+            NHKs = pbkdf2(mkey, hex(04), 10, prf='hmac-sha256')
+            NHKr = pbkdf2(mkey, hex(03), 10, prf='hmac-sha256')
+            CKs = pbkdf2(mkey, hex(06), 10, prf='hmac-sha256')
+            CKr = pbkdf2(mkey, hex(05), 10, prf='hmac-sha256')
             Ns = 0
             Nr = 0
             PNs = 0
@@ -192,17 +180,20 @@ class Axolotl:
                  'NHKr': NHKr,
                  'CKs': CKs,
                  'CKr': CKr,
-                 'DHIs_priv': DHIs_priv,
-                 'DHIs': DHIs,
+                 'DHIs_priv': self.state['DHIs_priv'],
+                 'DHIs': self.state['DHIs'],
                  'DHIr': DHIr,
-                 'DHRs_priv': DHRs_priv,
-                 'DHRs': DHRs,
+                 'DHRs_priv': self.state['DHRs_priv'],
+                 'DHRs': self.state['DHRs'],
                  'DHRr': DHRr,
                  'Ns': Ns,
                  'Nr': Nr,
                  'PNs': PNs,
                  'bobs_first_message': bobs_first_message,
                }
+
+        self.ratchetKey = False
+        self.ratchetPKey = False
 
     def encrypt(self, plaintext):
         if self.state['DHRs'] == None:
@@ -233,7 +224,7 @@ class Axolotl:
 
     def commitSkippedMK(self):
         timestamp = int(time())
-        db = sqlite3.connect('axolotl.db')
+        db = sqlite3.connect(self.dbname)
         with db:
             cur = db.cursor()
             for mk, HKr in self.staged_HK_mk.iteritems():
@@ -254,7 +245,7 @@ class Axolotl:
             cur.execute('DELETE FROM skipped_mk WHERE timestamp < ?', (rowtime,))
 
     def trySkippedMK(self, msg, name, other_name):
-        db = sqlite3.connect('axolotl.db')
+        db = sqlite3.connect(self.dbname)
         with db:
             cur = db.cursor()
             cur.execute('SELECT * FROM skipped_mk')
@@ -379,28 +370,30 @@ class Axolotl:
         sys.stdout.flush()
 
     def printKeys(self):
-        print 'Your Identity key is:\n' + binascii.b2a_base64(self.identityPKey)
-        fingerprint = hashlib.sha224(self.identityPKey).hexdigest().upper()
+        print 'Your Identity key is:\n' + binascii.b2a_base64(self.state['DHIs'])
+        fingerprint = hashlib.sha224(self.state['DHIs']).hexdigest().upper()
         fprint = ''
         for i in range(0, len(fingerprint), 4):
             fprint += fingerprint[i:i+2] + ':'
         print 'Your identity key fingerprint is: '
         print fprint[:-1] + '\n'
-        print 'Your Handshake key is:\n' + binascii.b2a_base64(self.handshakePKey)
-        print 'Your Ratchet key is:\n' + binascii.b2a_base64(self.ratchetPKey)
+        print 'Your Ratchet key is:\n' + binascii.b2a_base64(self.state['DHRs'])
+        if self.handshakeKey:
+            print 'Your Handshake key is:\n' + binascii.b2a_base64(self.handshakePKey)
+        else:
+            print 'Your Handshake key is not available'
 
     def saveState(self):
         DHRs_priv = 0 if self.state['DHRs_priv'] is None else binascii.b2a_base64(self.state['DHRs_priv']).strip()
         DHRs = 0 if self.state['DHRs'] is None else binascii.b2a_base64(self.state['DHRs']).strip()
         bobs_first_message = 1 if self.state['bobs_first_message'] else 0
         mode = 1 if self.mode else 0
-        db = sqlite3.connect('axolotl.db')
+        db = sqlite3.connect(self.dbname)
         with db:
             cur = db.cursor()
             cur.execute('REPLACE INTO conversations ( \
               my_identity, \
               other_identity, \
-              master_key, \
               RK, \
               HKS, \
               HKr, \
@@ -418,17 +411,10 @@ class Axolotl:
               Nr, \
               PNs, \
               bobs_first_message, \
-              mode, \
-              identityKey, \
-              identityPKey, \
-              handshakeKey, \
-              handshakePKey, \
-              ratchetKey, \
-              ratchetPKey \
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', \
+              mode \
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', \
             ( self.state['name'], \
               self.state['other_name'], \
-              binascii.b2a_base64(self.mkey).strip(), \
               binascii.b2a_base64(self.state['RK']).strip(), \
               binascii.b2a_base64(self.state['HKs']).strip(), \
               binascii.b2a_base64(self.state['HKr']).strip(), \
@@ -446,17 +432,11 @@ class Axolotl:
               self.state['Nr'], \
               self.state['PNs'], \
               bobs_first_message, \
-              mode, \
-              binascii.b2a_base64(self.identityKey).strip(), \
-              binascii.b2a_base64(self.identityPKey).strip(), \
-              binascii.b2a_base64(self.handshakeKey).strip(), \
-              binascii.b2a_base64(self.handshakePKey).strip(), \
-              binascii.b2a_base64(self.ratchetKey).strip(), \
-              binascii.b2a_base64(self.ratchetPKey).strip() \
+              mode \
             ))
 
     def loadState(self, name, other_name):
-        db = sqlite3.connect('axolotl.db')
+        db = sqlite3.connect(self.dbname)
 
         with db:
             cur = db.cursor()
@@ -467,35 +447,28 @@ class Axolotl:
                     self.state = \
                            { 'name': row[0],
                              'other_name': row[1],
-                             'RK': binascii.a2b_base64(row[3]),
-                             'HKs': binascii.a2b_base64(row[4]),
-                             'HKr': binascii.a2b_base64(row[5]),
-                             'NHKs': binascii.a2b_base64(row[6]),
-                             'NHKr': binascii.a2b_base64(row[7]),
-                             'CKs': binascii.a2b_base64(row[8]),
-                             'CKr': binascii.a2b_base64(row[9]),
-                             'DHIs_priv': binascii.a2b_base64(row[10]),
-                             'DHIs': binascii.a2b_base64(row[11]),
-                             'DHIr': binascii.a2b_base64(row[12]),
-                             'DHRr': binascii.a2b_base64(row[15]),
-                             'Ns': row[16],
-                             'Nr': row[17],
-                             'PNs': row[18],
+                             'RK': binascii.a2b_base64(row[2]),
+                             'HKs': binascii.a2b_base64(row[3]),
+                             'HKr': binascii.a2b_base64(row[4]),
+                             'NHKs': binascii.a2b_base64(row[5]),
+                             'NHKr': binascii.a2b_base64(row[6]),
+                             'CKs': binascii.a2b_base64(row[7]),
+                             'CKr': binascii.a2b_base64(row[8]),
+                             'DHIs_priv': binascii.a2b_base64(row[9]),
+                             'DHIs': binascii.a2b_base64(row[10]),
+                             'DHIr': binascii.a2b_base64(row[11]),
+                             'DHRr': binascii.a2b_base64(row[14]),
+                             'Ns': row[15],
+                             'Nr': row[16],
+                             'PNs': row[17],
                            }
                     self.name = self.state['name']
-                    self.state['DHRs_priv'] = None if row[13] == '0' else binascii.a2b_base64(row[13])
-                    self.state['DHRs'] = None if row[14] == '0' else binascii.a2b_base64(row[14])
-                    bobs_first_message = row[19]
+                    self.state['DHRs_priv'] = None if row[12] == '0' else binascii.a2b_base64(row[12])
+                    self.state['DHRs'] = None if row[13] == '0' else binascii.a2b_base64(row[13])
+                    bobs_first_message = row[18]
                     self.state['bobs_first_message'] = True if bobs_first_message == 1 \
                                                        else False
-                    self.mkey = binascii.a2b_base64(row[2])
-                    mode = row[20]
+                    mode = row[19]
                     self.mode = True if mode == 1 else False
-                    self.identityKey = binascii.a2b_base64(row[21])
-                    self.identityPKey = binascii.a2b_base64(row[22])
-                    self.handshakeKey = binascii.a2b_base64(row[23])
-                    self.handshakePKey = binascii.a2b_base64(row[24])
-                    self.ratchetKey = binascii.a2b_base64(row[25])
-                    self.ratchetPKey = binascii.a2b_base64(row[26])
                     return # exit at first match
             return False # if no matches

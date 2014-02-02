@@ -17,8 +17,8 @@ dick = Axolotl('Dick')
 harry = Axolotl('Harry')
 
 # initialize Tom and Dick's states
-tom.initState('Dick', dick.identityPKey, dick.handshakePKey, dick.ratchetPKey)
-dick.initState('Tom', tom.identityPKey, tom.handshakePKey, tom.ratchetPKey)
+tom.initState('Dick', dick.state['DHIs'], dick.handshakePKey, dick.state['DHRs'], verify=False)
+dick.initState('Tom', tom.state['DHIs'], tom.handshakePKey, tom.state['DHRs'], verify=False)
 
 # tell who is who
 if tom.mode:
