@@ -223,12 +223,12 @@ class Axolotl:
         key = binascii.hexlify(key)
         msg = gpg.encrypt(plaintext, recipients=None, symmetric='AES256', armor=False,
                                 always_trust=True, passphrase=key)
-        return msg.data
+        return msg.data[6:]
 
     def dec(self, key, encrypted):
         key = binascii.hexlify(key)
-        #msg = gpg.decrypt(binascii.unhexlify('8c0d04090308') + encrypted,
-        msg = gpg.decrypt(encrypted,
+        msg = gpg.decrypt(binascii.unhexlify('8c0d04090308') + encrypted,
+        #msg = gpg.decrypt(encrypted,
                           passphrase=key, always_trust=True)
         return msg.data
 
