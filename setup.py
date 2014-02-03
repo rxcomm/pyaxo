@@ -12,5 +12,5 @@ setup(name='Axolotl',
       author='David R. Andersen',
       url='https://github.com/rxcomm/pyaxo',
       py_modules=['pyaxo'],
-      install_requires=['python-gnupg >= 0.3.5'],
+      install_requires=['python-gnupg >= 0.3.5', 'passlib >= 1.6.1'],
      )

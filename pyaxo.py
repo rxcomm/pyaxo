@@ -65,7 +65,7 @@ class Axolotl:
         try:
             self.db = self.openDB()
         except sqlite3.OperationalError:
-            print 'Bad sql! Is the database encrypted?'
+            print 'Bad sql! Password problem - cannot create the database.'
             exit(1)
         self.mode = None
         self.staged_HK_mk = {}
@@ -450,7 +450,7 @@ class Axolotl:
             try:
                 cur.execute('SELECT * FROM conversations')
             except sqlite3.OperationalError:
-                print 'Bad sql! Is the database encrypted?'
+                print 'Bad sql! Password problem - cannot loadState()'
                 exit(1)
             rows = cur.fetchall()
             for row in rows:
