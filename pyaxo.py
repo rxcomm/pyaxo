@@ -101,6 +101,7 @@ class Axolotl:
               DHRs_priv TEXT, \
               DHRs TEXT, \
               DHRr TEXT, \
+              CONVid TEXT, \
               Ns INTEGER, \
               Nr INTEGER, \
               PNs INTEGER, \
@@ -163,6 +164,7 @@ class Axolotl:
             NHKr = pbkdf2(mkey, hex(04), 10, prf='hmac-sha256')
             CKs = pbkdf2(mkey, hex(05), 10, prf='hmac-sha256')
             CKr = pbkdf2(mkey, hex(06), 10, prf='hmac-sha256')
+            CONVid = pbkdf2(mkey, hex(07), 10, prf='hmac-sha256')
             Ns = 0
             Nr = 0
             PNs = 0
@@ -175,6 +177,7 @@ class Axolotl:
             NHKr = pbkdf2(mkey, hex(03), 10, prf='hmac-sha256')
             CKs = pbkdf2(mkey, hex(06), 10, prf='hmac-sha256')
             CKr = pbkdf2(mkey, hex(05), 10, prf='hmac-sha256')
+            CONVid = pbkdf2(mkey, hex(07), 10, prf='hmac-sha256')
             Ns = 0
             Nr = 0
             PNs = 0
@@ -196,6 +199,7 @@ class Axolotl:
                  'DHRs_priv': self.state['DHRs_priv'],
                  'DHRs': self.state['DHRs'],
                  'DHRr': DHRr,
+                 'CONVid': CONVid,
                  'Ns': Ns,
                  'Nr': Nr,
                  'PNs': PNs,
@@ -414,12 +418,13 @@ class Axolotl:
               DHRs_priv, \
               DHRs, \
               DHRr, \
+              CONVid, \
               Ns, \
               Nr, \
               PNs, \
               bobs_first_message, \
               mode \
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', \
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', \
             ( self.state['name'], \
               self.state['other_name'], \
               binascii.b2a_base64(self.state['RK']).strip(), \
@@ -435,6 +440,7 @@ class Axolotl:
               DHRs_priv, \
               DHRs, \
               binascii.b2a_base64(self.state['DHRr']).strip(), \
+              binascii.b2a_base64(self.state['CONVid']).strip(), \
               self.state['Ns'], \
               self.state['Nr'], \
               self.state['PNs'], \
@@ -469,17 +475,18 @@ class Axolotl:
                              'DHIs': binascii.a2b_base64(row[10]),
                              'DHIr': binascii.a2b_base64(row[11]),
                              'DHRr': binascii.a2b_base64(row[14]),
-                             'Ns': row[15],
-                             'Nr': row[16],
-                             'PNs': row[17],
+                             'CONVid': binascii.a2b_base64(row[15]),
+                             'Ns': row[16],
+                             'Nr': row[17],
+                             'PNs': row[18],
                            }
                     self.name = self.state['name']
                     self.state['DHRs_priv'] = None if row[12] == '0' else binascii.a2b_base64(row[12])
                     self.state['DHRs'] = None if row[13] == '0' else binascii.a2b_base64(row[13])
-                    bobs_first_message = row[18]
+                    bobs_first_message = row[19]
                     self.state['bobs_first_message'] = True if bobs_first_message == 1 \
                                                        else False
-                    mode = row[19]
+                    mode = row[20]
                     self.mode = True if mode == 1 else False
                     return # exit at first match
             return False # if no matches
