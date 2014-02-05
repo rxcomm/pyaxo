@@ -29,7 +29,6 @@ import hmac
 import gnupg
 import os
 import sys
-import zlib
 from getpass import getpass
 from time import time
 from passlib.utils.pbkdf2 import pbkdf2
@@ -500,15 +499,14 @@ class Axolotl:
                 if self.dbpassphrase is not None:
                     sql = gpg.decrypt_file(f, passphrase=self.dbpassphrase)
                     if sql and sql != '':
-                        sql = zlib.decompress(sql.data)
-                        db.cursor().executescript(str(sql))
+                        db.cursor().executescript(sql.data)
                         return db
                     else:
                         print 'Bad passphrase!'
                         exit(1)
                 else:
                     sql = f.read()
-                    db.cursor().executescript(str(sql))
+                    db.cursor().executescript(sql)
                     return db
         except IOError:
             return db
@@ -519,7 +517,6 @@ class Axolotl:
         for item in self.db.iterdump():
             sql = sql+item+'\n'
         if self.dbpassphrase is not None:
-            sql = zlib.compress(sql)
             crypt_sql = gpg.encrypt(sql, recipients=None, symmetric='AES256', armor=False,
                                 always_trust=True, passphrase=self.dbpassphrase)
             with open(self.dbname, 'wb') as f:
