@@ -6,7 +6,8 @@ import os
 
 # start with a fresh database
 try:
-    os.remove('./axolotl.db')
+    os.remove('./name1.db')
+    os.remove('./name2.db')
 except OSError:
     pass
 
