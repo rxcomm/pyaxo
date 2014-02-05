@@ -1,6 +1,13 @@
 #!/usr/bin/env python
 
+import os
 from pyaxo import Axolotl
+
+# need clean database for this example to work
+try:
+    os.remove('./axolotl.db')
+except OSError:
+    pass
 
 # create two instance classes with unencrypted database
 a = Axolotl('Angie', dbpassphrase=None)

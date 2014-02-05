@@ -1,6 +1,13 @@
 #!/usr/bin/env python
 
+import os
 from pyaxo import Axolotl
+
+# need clean database for this example to work
+try:
+    os.remove('./axolotl.db')
+except OSError:
+    pass
 
 # create two instance classes with database passphrase specified as kwarg
 a = Axolotl('Angie', dbpassphrase='123')

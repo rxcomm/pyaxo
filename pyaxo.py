@@ -156,27 +156,27 @@ class Axolotl:
         if self.mode == None: # mode not selected
             exit(1)
         if self.mode: # alice mode
-            RK = pbkdf2(mkey, hex(00), 10, prf='hmac-sha256')
-            HKs = pbkdf2(mkey, hex(01), 10, prf='hmac-sha256')
-            HKr = pbkdf2(mkey, hex(02), 10, prf='hmac-sha256')
-            NHKs = pbkdf2(mkey, hex(03), 10, prf='hmac-sha256')
-            NHKr = pbkdf2(mkey, hex(04), 10, prf='hmac-sha256')
-            CKs = pbkdf2(mkey, hex(05), 10, prf='hmac-sha256')
-            CKr = pbkdf2(mkey, hex(06), 10, prf='hmac-sha256')
-            CONVid = pbkdf2(mkey, hex(07), 10, prf='hmac-sha256')
+            RK = pbkdf2(mkey, b'\x00', 10, prf='hmac-sha256')
+            HKs = pbkdf2(mkey, b'\x01', 10, prf='hmac-sha256')
+            HKr = pbkdf2(mkey, b'\x02', 10, prf='hmac-sha256')
+            NHKs = pbkdf2(mkey, b'\x03', 10, prf='hmac-sha256')
+            NHKr = pbkdf2(mkey, b'\x04', 10, prf='hmac-sha256')
+            CKs = pbkdf2(mkey, b'\x05', 10, prf='hmac-sha256')
+            CKr = pbkdf2(mkey, b'\x06', 10, prf='hmac-sha256')
+            CONVid = pbkdf2(mkey, b'\x07', 10, prf='hmac-sha256')
             Ns = 0
             Nr = 0
             PNs = 0
             bobs_first_message = False
         else: # bob mode
-            RK = pbkdf2(mkey, hex(00), 10, prf='hmac-sha256')
-            HKs = pbkdf2(mkey, hex(02), 10, prf='hmac-sha256')
-            HKr = pbkdf2(mkey, hex(01), 10, prf='hmac-sha256')
-            NHKs = pbkdf2(mkey, hex(04), 10, prf='hmac-sha256')
-            NHKr = pbkdf2(mkey, hex(03), 10, prf='hmac-sha256')
-            CKs = pbkdf2(mkey, hex(06), 10, prf='hmac-sha256')
-            CKr = pbkdf2(mkey, hex(05), 10, prf='hmac-sha256')
-            CONVid = pbkdf2(mkey, hex(07), 10, prf='hmac-sha256')
+            RK = pbkdf2(mkey, b'\x00', 10, prf='hmac-sha256')
+            HKs = pbkdf2(mkey, b'\x02', 10, prf='hmac-sha256')
+            HKr = pbkdf2(mkey, b'\x01', 10, prf='hmac-sha256')
+            NHKs = pbkdf2(mkey, b'\x04', 10, prf='hmac-sha256')
+            NHKr = pbkdf2(mkey, b'\x03', 10, prf='hmac-sha256')
+            CKs = pbkdf2(mkey, b'\x06', 10, prf='hmac-sha256')
+            CKr = pbkdf2(mkey, b'\x05', 10, prf='hmac-sha256')
+            CONVid = pbkdf2(mkey, b'\x07', 10, prf='hmac-sha256')
             Ns = 0
             Nr = 0
             PNs = 0
@@ -302,11 +302,11 @@ class Axolotl:
                                      self.genDH(self.state['DHRs_priv'], self.state['DHRr'])).digest()
                 self.state['HKs'] = self.state['NHKs']
                 if self.mode:
-                    self.state['NHKs'] = pbkdf2(self.state['RK'], hex(03), 10, prf='hmac-sha256')
-                    self.state['CKs'] = pbkdf2(self.state['RK'], hex(05), 10, prf='hmac-sha256')
+                    self.state['NHKs'] = pbkdf2(self.state['RK'], b'\x03', 10, prf='hmac-sha256')
+                    self.state['CKs'] = pbkdf2(self.state['RK'], b'\x05', 10, prf='hmac-sha256')
                 else:
-                    self.state['NHKs'] = pbkdf2(self.state['RK'], hex(04), 10, prf='hmac-sha256')
-                    self.state['CKs'] = pbkdf2(self.state['RK'], hex(06), 10, prf='hmac-sha256')
+                    self.state['NHKs'] = pbkdf2(self.state['RK'], b'\x04', 10, prf='hmac-sha256')
+                    self.state['CKs'] = pbkdf2(self.state['RK'], b'\x06', 10, prf='hmac-sha256')
                 self.state['DHRs_priv'] = None
                 self.state['DHRs'] = None
                 self.state['bobs_first_message'] = False
@@ -323,11 +323,11 @@ class Axolotl:
                   self.genDH(self.state['DHRs_priv'], self.state['DHRr'])).digest()
             HKp = self.state['NHKr']
             if self.mode:
-                NHKp = pbkdf2(RKp, hex(04), 10, prf='hmac-sha256')
-                CKp = pbkdf2(RKp, hex(06), 10, prf='hmac-sha256')
+                NHKp = pbkdf2(RKp, b'\x04', 10, prf='hmac-sha256')
+                CKp = pbkdf2(RKp, b'\x06', 10, prf='hmac-sha256')
             else:
-                NHKp = pbkdf2(RKp, hex(03), 10, prf='hmac-sha256')
-                CKp = pbkdf2(RKp, hex(05), 10, prf='hmac-sha256')
+                NHKp = pbkdf2(RKp, b'\x03', 10, prf='hmac-sha256')
+                CKp = pbkdf2(RKp, b'\x05', 10, prf='hmac-sha256')
             CKp, mk = self.stageSkippedMK(HKp, 0, Np, CKp)
             body = self.dec(mk, msg[1+ord(msg[:1]):])
             if not body or body == '':
@@ -341,11 +341,11 @@ class Axolotl:
                                  self.genDH(self.state['DHRs_priv'], self.state['DHRr'])).digest()
             self.state['HKs'] = self.state['NHKs']
             if self.mode:
-                self.state['NHKs'] = pbkdf2(self.state['RK'], hex(03), 10, prf='hmac-sha256')
-                self.state['CKs'] = pbkdf2(self.state['RK'], hex(05), 10, prf='hmac-sha256')
+                self.state['NHKs'] = pbkdf2(self.state['RK'], b'\x03', 10, prf='hmac-sha256')
+                self.state['CKs'] = pbkdf2(self.state['RK'], b'\x05', 10, prf='hmac-sha256')
             else:
-                self.state['NHKs'] = pbkdf2(self.state['RK'], hex(04), 10, prf='hmac-sha256')
-                self.state['CKs'] = pbkdf2(self.state['RK'], hex(06), 10, prf='hmac-sha256')
+                self.state['NHKs'] = pbkdf2(self.state['RK'], b'\x04', 10, prf='hmac-sha256')
+                self.state['CKs'] = pbkdf2(self.state['RK'], b'\x06', 10, prf='hmac-sha256')
             self.state['DHRs_priv'] = None
             self.state['DHRs'] = None
         self.commitSkippedMK()
