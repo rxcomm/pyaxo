@@ -150,7 +150,6 @@ class Axolotl:
         else:
             self.mode = False
         DHIr = other_identityKey
-        DHRr = other_ratchetKey
         mkey = self.tripleDH(self.state['DHIs_priv'], self.handshakeKey,
                                   other_identityKey, other_handshakeKey)
         if self.mode == None: # mode not selected
@@ -163,6 +162,9 @@ class Axolotl:
             NHKr = pbkdf2(mkey, b'\x04', 10, prf='hmac-sha256')
             CKs = pbkdf2(mkey, b'\x05', 10, prf='hmac-sha256')
             CKr = pbkdf2(mkey, b'\x06', 10, prf='hmac-sha256')
+            DHRs_priv = None
+            DHRs = None
+            DHRr = other_ratchetKey
             CONVid = pbkdf2(mkey, b'\x07', 10, prf='hmac-sha256')
             Ns = 0
             Nr = 0
@@ -176,6 +178,9 @@ class Axolotl:
             NHKr = pbkdf2(mkey, b'\x03', 10, prf='hmac-sha256')
             CKs = pbkdf2(mkey, b'\x06', 10, prf='hmac-sha256')
             CKr = pbkdf2(mkey, b'\x05', 10, prf='hmac-sha256')
+            DHRs_priv = self.state['DHRs_priv']
+            DHRs = self.state['DHRs']
+            DHRr = None
             CONVid = pbkdf2(mkey, b'\x07', 10, prf='hmac-sha256')
             Ns = 0
             Nr = 0
@@ -195,8 +200,8 @@ class Axolotl:
                  'DHIs_priv': self.state['DHIs_priv'],
                  'DHIs': self.state['DHIs'],
                  'DHIr': DHIr,
-                 'DHRs_priv': self.state['DHRs_priv'],
-                 'DHRs': self.state['DHRs'],
+                 'DHRs_priv': DHRs_priv,
+                 'DHRs': DHRs,
                  'DHRr': DHRr,
                  'CONVid': CONVid,
                  'Ns': Ns,
@@ -397,6 +402,7 @@ class Axolotl:
     def saveState(self):
         DHRs_priv = 0 if self.state['DHRs_priv'] is None else binascii.b2a_base64(self.state['DHRs_priv']).strip()
         DHRs = 0 if self.state['DHRs'] is None else binascii.b2a_base64(self.state['DHRs']).strip()
+        DHRr = 0 if self.state['DHRr'] is None else binascii.b2a_base64(self.state['DHRr']).strip()
         bobs_first_message = 1 if self.state['bobs_first_message'] else 0
         mode = 1 if self.mode else 0
         with self.db:
@@ -438,7 +444,7 @@ class Axolotl:
               binascii.b2a_base64(self.state['DHIr']).strip(), \
               DHRs_priv, \
               DHRs, \
-              binascii.b2a_base64(self.state['DHRr']).strip(), \
+              DHRr, \
               binascii.b2a_base64(self.state['CONVid']).strip(), \
               self.state['Ns'], \
               self.state['Nr'], \
@@ -446,7 +452,7 @@ class Axolotl:
               bobs_first_message, \
               mode \
             ))
-        self.closeDB()
+        self.writeDB()
 
     def loadState(self, name, other_name):
         self.db = self.openDB()
@@ -473,7 +479,6 @@ class Axolotl:
                              'DHIs_priv': binascii.a2b_base64(row[9]),
                              'DHIs': binascii.a2b_base64(row[10]),
                              'DHIr': binascii.a2b_base64(row[11]),
-                             'DHRr': binascii.a2b_base64(row[14]),
                              'CONVid': binascii.a2b_base64(row[15]),
                              'Ns': row[16],
                              'Nr': row[17],
@@ -482,6 +487,7 @@ class Axolotl:
                     self.name = self.state['name']
                     self.state['DHRs_priv'] = None if row[12] == '0' else binascii.a2b_base64(row[12])
                     self.state['DHRs'] = None if row[13] == '0' else binascii.a2b_base64(row[13])
+                    self.state['DHRr'] = None if row[14] == '0' else binascii.a2b_base64(row[14])
                     bobs_first_message = row[19]
                     self.state['bobs_first_message'] = True if bobs_first_message == 1 \
                                                        else False
@@ -511,7 +517,7 @@ class Axolotl:
         except IOError:
             return db
 
-    def closeDB(self):
+    def writeDB(self):
 
         sql = ''
         for item in self.db.iterdump():
@@ -525,3 +531,30 @@ class Axolotl:
             with open(self.dbname, 'w') as f:
                 f.write(sql)
 
+    def printState(self):
+        print
+        print 'Warning: saving this data to disk is insecure!'
+        print
+        for key in sorted(self.state):
+             if 'priv' in key:
+                 pass
+             else:
+                 if self.state[key] is None:
+                     print key + ': None'
+                 elif type(self.state[key]) is bool:
+                     if self.state[key]:
+                         print key + ': True'
+                     else:
+                         print key + ': False'
+                 elif type(self.state[key]) is str:
+                     try:
+                         self.state[key].decode('ascii')
+                         print key + ': ' + self.state[key]
+                     except UnicodeDecodeError:
+                         print key + ': ' + binascii.b2a_base64(self.state[key]).strip()
+                 else:
+                     print key + ': ' + str(self.state[key])
+        if self.mode:
+            print 'Mode: Alice'
+        else:
+            print 'Mode: Bob'
