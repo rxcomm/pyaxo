@@ -28,5 +28,5 @@ Load the new state as you encrypt/decrypt files and it will show you the changes
 One thing you may notice is that you can only decrypt a file once - after that,
 because of the perfect forward secrecy provided by Axolotl, the key is __gone__!
 
-Finally, there is a file transfer example ```example.py```. This illustrates the
-use of a context manager with Axolotl.
+Finally, there is a file transfer example ```transfer.py```, and a standalone chat
+program ```axochat.py```. These illustrate the use of a context manager with Axolotl.
