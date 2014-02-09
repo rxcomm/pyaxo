@@ -59,15 +59,6 @@ def usage():
     print ' -g: generate a key database for a nick'
     exit()
 
-try:
-    mode = sys.argv[1]
-except:
-    usage()
-
-NICK = raw_input('Enter your nick: ')
-OTHER_NICK = raw_input('Enter the nick of the other party: ')
-lock = threading.Lock()
-
 def recvServer():
     while True:
         data = ''
@@ -95,6 +86,15 @@ def recvClient():
             output_win.addstr(a.decrypt(data[:-3]), curses.color_pair(3))
             output_win.refresh()
             lock.release()
+
+try:
+    mode = sys.argv[1]
+except:
+    usage()
+
+NICK = raw_input('Enter your nick: ')
+OTHER_NICK = raw_input('Enter the nick of the other party: ')
+lock = threading.Lock()
 
 if mode == '-s':
     print 'Waiting for ' + OTHER_NICK + ' to connect...'
