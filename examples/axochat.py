@@ -4,8 +4,12 @@ import binascii
 import socket
 import threading
 import sys
+import os
+import curses
+import curses.textpad
 from contextlib import contextmanager
 from pyaxo import Axolotl
+from time import sleep
 
 HOST = ''
 PORT = 50000 # Arbitrary non-privileged port
@@ -14,6 +18,7 @@ PORT = 50000 # Arbitrary non-privileged port
 def socketcontext(*args, **kwargs):
     s = socket.socket(*args, **kwargs)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
     yield s
     s.close()
 
@@ -23,6 +28,29 @@ def axo(my_name, other_name, dbname, dbpassphrase):
     a.loadState(my_name, other_name)
     yield a
     a.saveState()
+
+def windows():
+    stdscr = curses.initscr()
+    curses.start_color()
+    curses.use_default_colors()
+    curses.init_pair(3, 2, -1)
+    curses.cbreak()
+    curses.curs_set(0)
+    size = stdscr.getmaxyx()
+    input_win = curses.newwin(3, size[1]-1, size[0]-4, 0)
+    output_win = curses.newwin(size[0]-4, size[1]-1, 0, 0)
+    input_win.idlok(1)
+    input_win.scrollok(1)
+    input_win.nodelay(1)
+    output_win.idlok(1)
+    output_win.scrollok(1)
+    return stdscr, input_win, output_win
+
+def closeWindows():
+    curses.nocbreak()
+    stdscr.keypad(0)
+    curses.echo()
+    curses.endwin()
 
 def usage():
     print 'Usage: ' + sys.argv[0] + ' -(s,c,g)'
@@ -38,29 +66,35 @@ except:
 
 NICK = raw_input('Enter your nick: ')
 OTHER_NICK = raw_input('Enter the nick of the other party: ')
-
-def hilite(text):
-    attr = []
-    attr.append('32')
-    return '\x1b[%sm%s\x1b[0m' % (';'.join(attr), text)
+lock = threading.Lock()
 
 def recvServer():
     while True:
-        data = conn.recv(1024)
-        if not data: sys.exit()
+        data = ''
+        while data[-3:] != 'EOP':
+            rcv = conn.recv(1024)
+            if not rcv:
+                sys.exit()
+            data = data + rcv
         with axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db', dbpassphrase='1') as a:
-            msg = a.decrypt(data)
-            sys.stdout.write(hilite(msg) + '\n' + NICK + ':>\n')
-            sys.stdout.flush()
+            lock.acquire()
+            output_win.addstr(a.decrypt(data[:-3]), curses.color_pair(3))
+            output_win.refresh()
+            lock.release()
 
 def recvClient():
     while True:
-        data = s.recv(1024)
-        if not data: sys.exit()
+        data = ''
+        while data[-3:] != 'EOP':
+            rcv = s.recv(1024)
+            if not rcv:
+                sys.exit()
+            data = data + rcv
         with axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db', dbpassphrase='1') as a:
-            msg = a.decrypt(data)
-            sys.stdout.write(hilite(msg) + '\n' + NICK + ':>\n')
-            sys.stdout.flush()
+            lock.acquire()
+            output_win.addstr(a.decrypt(data[:-3]), curses.color_pair(3))
+            output_win.refresh()
+            lock.release()
 
 if mode == '-s':
     print 'Waiting for ' + OTHER_NICK + ' to connect...'
@@ -68,38 +102,92 @@ if mode == '-s':
         s.bind((HOST, PORT))
         s.listen(1)
         conn, addr = s.accept()
+        stdscr, input_win, output_win = windows()
+        input_win.addstr(0, 0, NICK + ':> ')
+        input_win.clrtobot()
+        input_win.refresh()
         t = threading.Thread(target=recvServer)
         t.daemon = True
         t.start()
+        data = ''
         while True:
-            data = raw_input(NICK+':>\n')
-            if not data: sys.exit()
-            if data == '.': sys.exit()
-            with axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db', dbpassphrase='1') as a:
-                try:
-                    conn.send(a.encrypt(NICK+': '+data))
-                except socket.error:
-                    print 'Disconnected'
-                    sys.exit()
+            char = -1
+            while char != ord('\n'):
+                lock.acquire()
+                char = input_win.getch()
+                lock.release()
+                if char >= 0:
+                    data += chr(char)
+                sleep(0.1)
+            if data == '.quit\n':
+                closeWindows()
+                sys.exit()
+            if char == ord('\n'):
+                lock.acquire()
+                output_win.addstr(NICK+': '+data)
+                output_win.refresh()
+                input_win.addstr(0, 0, NICK + ':> ')
+                input_win.clrtobot()
+                input_win.refresh()
+                lock.release()
+                sleep(0.1)
+                with axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db', dbpassphrase='1') as a:
+                    try:
+                        conn.send(a.encrypt(NICK+': '+data) + 'EOP')
+                        data = ''
+                    except socket.error:
+                        lock.acquire()
+                        input_win.addstr('Disconnected')
+                        input_win.refresh()
+                        lock.release()
+                        closeWindows()
+                        sys.exit()
 
 elif mode == '-c':
     HOST = raw_input('Enter the server: ')
     print 'Connecting to ' + HOST + '...'
     with socketcontext(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.connect((HOST, PORT))
+        stdscr, input_win, output_win = windows()
+        input_win.addstr(0, 0, NICK + ':> ')
+        input_win.clrtobot()
+        input_win.refresh()
         t = threading.Thread(target=recvClient)
         t.daemon = True
         t.start()
+        data = ''
         while True:
-            data = raw_input(NICK+':>\n')
-            if not data: sys.exit()
-            if data == '.': sys.exit()
-            with axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db', dbpassphrase='1') as a:
-                try:
-                    s.send(a.encrypt(NICK+': '+data))
-                except socket.error:
-                    print 'Disconnected'
-                    sys.exit()
+            char = -1
+            while char != ord('\n'):
+                lock.acquire()
+                char = input_win.getch()
+                lock.release()
+                if char >= 0:
+                    data += chr(char)
+                sleep(0.1)
+            if data == '.quit\n':
+                closeWindows()
+                sys.exit()
+            if char == ord('\n'):
+                lock.acquire()
+                output_win.addstr(NICK+': '+data)
+                output_win.refresh()
+                input_win.addstr(0, 0, NICK + ':> ')
+                input_win.clrtobot()
+                input_win.refresh()
+                lock.release()
+                sleep(0.1)
+                with axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db', dbpassphrase='1') as a:
+                    try:
+                        s.send(a.encrypt(NICK+': '+data) + 'EOP')
+                        data = ''
+                    except socket.error:
+                        lock.acquire()
+                        input_win.addstr('Disconnected')
+                        input_win.refresh()
+                        lock.release()
+                        closeWindows()
+                        sys.exit()
 
 elif mode == '-g':
      a = Axolotl(NICK, dbname=OTHER_NICK+'.db')
