@@ -26,6 +26,8 @@ Usage:
 3. The other side connects the client to the server with:
      axochat.py -c
 
+4. .quit at the chat prompt will quit (don't forget the "dot")
+
 Port 50000 is the default port, but you can choose your own port as well.
 
 Be sure to edit the getPasswd() method to return your password. You can
@@ -198,7 +200,7 @@ if __name__ == '__main__':
 
     NICK = raw_input('Enter your nick: ')
     OTHER_NICK = raw_input('Enter the nick of the other party: ')
-    lock = threading.RLock()
+    lock = threading.Lock()
     HOST = ''
     while True:
         try:
