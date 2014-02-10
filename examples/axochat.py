@@ -35,7 +35,7 @@ def windows():
     curses.use_default_colors()
     curses.init_pair(3, 2, -1)
     curses.cbreak()
-    curses.curs_set(0)
+    curses.curs_set(1)
     size = stdscr.getmaxyx()
     input_win = curses.newwin(3, size[1]-1, size[0]-4, 0)
     output_win = curses.newwin(size[0]-4, size[1]-1, 0, 0)
@@ -67,11 +67,16 @@ def recvServer():
             if not rcv:
                 sys.exit()
             data = data + rcv
-        with axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db', dbpassphrase='1') as a:
-            lock.acquire()
-            output_win.addstr(a.decrypt(data[:-3]), curses.color_pair(3))
-            output_win.refresh()
-            lock.release()
+        data_list = data.split('EOP')
+        for data in data_list:
+            if data != '':
+                with axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db', dbpassphrase='1') as a:
+                    lock.acquire()
+                    output_win.addstr(a.decrypt(data), curses.color_pair(3))
+                    output_win.refresh()
+                    input_win.addstr(0, 0, NICK + ':> ')
+                    input_win.refresh()
+                    lock.release()
 
 def recvClient():
     while True:
@@ -81,11 +86,16 @@ def recvClient():
             if not rcv:
                 sys.exit()
             data = data + rcv
-        with axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db', dbpassphrase='1') as a:
-            lock.acquire()
-            output_win.addstr(a.decrypt(data[:-3]), curses.color_pair(3))
-            output_win.refresh()
-            lock.release()
+        data_list = data.split('EOP')
+        for data in data_list:
+            if data != '':
+                with axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db', dbpassphrase='1') as a:
+                    lock.acquire()
+                    output_win.addstr(a.decrypt(data), curses.color_pair(3))
+                    output_win.refresh()
+                    input_win.addstr(0, 0, NICK + ':> ')
+                    input_win.refresh()
+                    lock.release()
 
 try:
     mode = sys.argv[1]
@@ -118,7 +128,7 @@ if mode == '-s':
                 lock.release()
                 if char >= 0:
                     data += chr(char)
-                sleep(0.1)
+                sleep(0.02)
             if data == '.quit\n':
                 closeWindows()
                 sys.exit()
@@ -130,7 +140,7 @@ if mode == '-s':
                 input_win.clrtobot()
                 input_win.refresh()
                 lock.release()
-                sleep(0.1)
+                sleep(0.02)
                 with axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db', dbpassphrase='1') as a:
                     try:
                         conn.send(a.encrypt(NICK+': '+data) + 'EOP')
@@ -164,7 +174,7 @@ elif mode == '-c':
                 lock.release()
                 if char >= 0:
                     data += chr(char)
-                sleep(0.1)
+                sleep(0.02)
             if data == '.quit\n':
                 closeWindows()
                 sys.exit()
@@ -176,7 +186,7 @@ elif mode == '-c':
                 input_win.clrtobot()
                 input_win.refresh()
                 lock.release()
-                sleep(0.1)
+                sleep(0.02)
                 with axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db', dbpassphrase='1') as a:
                     try:
                         s.send(a.encrypt(NICK+': '+data) + 'EOP')
