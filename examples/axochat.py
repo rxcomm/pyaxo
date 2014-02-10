@@ -11,6 +11,45 @@ from contextlib import contextmanager
 from pyaxo import Axolotl
 from time import sleep
 
+"""
+Standalone chat script using AES256 encryption with Axolotl ratchet for
+key management.
+
+Usage:
+1. Create databases using:
+     axochat.py -g
+   for both nicks in the conversation
+
+2. One side starts the server with:
+     axochat.py -s
+
+3. The other side connects the client to the server with:
+     axochat.py -c
+
+Port 50000 is the default port, but you can choose your own port as well.
+
+Be sure to edit the getPasswd() method to return your password. You can
+hard code it or get it from e.g. a keyring. It just has to match the password
+you used when creating the database.
+
+Axochat requires the Axolotl module at https://github.com/rxcomm/pyaxo
+
+Copyright (C) 2014 by David R. Andersen <k0rx@RXcomm.net>
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program. If not, see <http://www.gnu.org/licenses/>.
+"""
+
 @contextmanager
 def socketcontext(*args, **kwargs):
     s = socket.socket(*args, **kwargs)
@@ -99,7 +138,8 @@ def receiveThread(sock, input_win, output_win):
         data_list = data.split('EOP')
         for data in data_list:
             if data != '':
-                with axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db', dbpassphrase='1') as a:
+                with axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db',
+                         dbpassphrase=getPasswd(NICK)) as a:
                     lock.acquire()
                     (cursory, cursorx) = input_win.getyx()
                     output_win.addstr(a.decrypt(data))
@@ -135,7 +175,8 @@ def chatThread(sock):
         lock.release()
         sleep(0.05)
         data = data.replace('\n', '') + '\n'
-        with axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db', dbpassphrase='1') as a:
+        with axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db',
+                 dbpassphrase=getPasswd(NICK)) as a:
             try:
                 sock.send(a.encrypt(data) + 'EOP')
             except socket.error:
@@ -145,6 +186,9 @@ def chatThread(sock):
                 lock.release()
                 closeWindows(stdscr)
                 sys.exit()
+
+def getPasswd(nick):
+    return '1'
 
 if __name__ == '__main__':
     try:
