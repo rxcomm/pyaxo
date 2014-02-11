@@ -89,12 +89,12 @@ def validator(ch):
     map ENTER key so it transmits message and release the lock for a bit
     """
     try:
-        lock.release()
-        sleep(0.01) # let receiveThread in if necessary
         if ch < 0:
             return None
         return ch
     finally:
+        lock.release()
+        sleep(0.01) # let receiveThread in if necessary
         lock.acquire()
 
 def windows():
@@ -154,9 +154,9 @@ def receiveThread(sock, stdscr, input_win, output_win):
                     input_win.move(cursory, cursorx)
                     input_win.cursyncup()
                     input_win.noutrefresh()
-                    curses.doupdate()
-                    sleep(0.02) # write time for axo db
-                    lock.release()
+                curses.doupdate()
+                sleep(0.01) # write time for axo db
+                lock.release()
 
 def chatThread(sock):
     stdscr, input_win, output_win = windows()
@@ -188,15 +188,13 @@ def chatThread(sock):
                 try:
                     lock.acquire()
                     sock.send(a.encrypt(data) + 'EOP')
-                    sleep(0.02) # write time for axo db
-                    lock.release()
                 except socket.error:
-                    lock.acquire()
                     input_win.addstr('Disconnected')
                     input_win.refresh()
-                    lock.release()
                     closeWindows(stdscr)
                     sys.exit()
+            sleep(0.01) # write time for axo db
+            lock.release()
     except KeyboardInterrupt:
         closeWindows(stdscr)
 
