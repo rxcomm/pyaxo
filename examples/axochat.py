@@ -88,9 +88,11 @@ def validator(ch):
     """
     map ENTER key so it transmits message and release the lock for a bit
     """
+    global screen_needs_update
     try:
-        if ch < 0:
-            return None
+        if screen_needs_update:
+            curses.doupdate()
+            screen_needs_update = False
         return ch
     finally:
         lock.release()
@@ -116,6 +118,7 @@ def windows():
     input_win.attron(curses.color_pair(3))
     output_win.idlok(1)
     output_win.scrollok(1)
+    output_win.leaveok(0)
     return stdscr, input_win, output_win
 
 def closeWindows(stdscr):
@@ -132,6 +135,7 @@ def usage():
     exit()
 
 def receiveThread(sock, stdscr, input_win, output_win):
+    global screen_needs_update
     while True:
         data = ''
         while data[-3:] != 'EOP':
@@ -143,22 +147,23 @@ def receiveThread(sock, stdscr, input_win, output_win):
                 sys.exit()
             data = data + rcv
         data_list = data.split('EOP')
+        lock.acquire()
+        (cursory, cursorx) = input_win.getyx()
         for data in data_list:
             if data != '':
                 with axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db',
                          dbpassphrase=getPasswd(NICK)) as a:
-                    lock.acquire()
-                    (cursory, cursorx) = input_win.getyx()
                     output_win.addstr(a.decrypt(data))
-                    output_win.noutrefresh()
-                    input_win.move(cursory, cursorx)
-                    input_win.cursyncup()
-                    input_win.noutrefresh()
-                curses.doupdate()
-                sleep(0.01) # write time for axo db
-                lock.release()
+        input_win.move(cursory, cursorx)
+        input_win.cursyncup()
+        input_win.noutrefresh()
+        output_win.noutrefresh()
+        sleep(0.01) # write time for axo db
+        screen_needs_update = True
+        lock.release()
 
 def chatThread(sock):
+    global screen_needs_update
     stdscr, input_win, output_win = windows()
     input_win.addstr(0, 0, NICK + ':> ')
     textpad = _Textbox(input_win, insert_mode=True)
@@ -180,13 +185,11 @@ def chatThread(sock):
             input_win.move(0, len(NICK)+3)
             input_win.cursyncup()
             input_win.noutrefresh()
-            curses.doupdate()
-            lock.release()
+            screen_needs_update = True
             data = data.replace('\n', '') + '\n'
             with axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db',
                      dbpassphrase=getPasswd(NICK)) as a:
                 try:
-                    lock.acquire()
                     sock.send(a.encrypt(data) + 'EOP')
                 except socket.error:
                     input_win.addstr('Disconnected')
@@ -210,6 +213,7 @@ if __name__ == '__main__':
     NICK = raw_input('Enter your nick: ')
     OTHER_NICK = raw_input('Enter the nick of the other party: ')
     lock = threading.Lock()
+    screen_needs_update = False
     HOST = ''
     while True:
         try:
