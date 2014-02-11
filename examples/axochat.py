@@ -215,6 +215,9 @@ if __name__ == '__main__':
     HOST = ''
     while True:
         try:
+            if mode == '-g':
+                PORT = 50000 # dummy assignment
+                break
             PORT = raw_input('TCP port (1 for random choice, 50000 is default): ')
             PORT = int(PORT)
             break
