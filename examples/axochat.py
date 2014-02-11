@@ -86,7 +86,7 @@ class _Textbox(Textbox):
 
 def validator(ch):
     """
-    map ENTER key so it transmits message and release the lock for a bit
+    Update screen if necessary and release the lock so receiveThread can run
     """
     global screen_needs_update
     try:
