@@ -34,14 +34,6 @@ from time import time
 from passlib.utils.pbkdf2 import pbkdf2
 from curve25519 import keys
 
-# If a secure random number generator is unavailable, exit with an error.
-try:
-    import Crypto.Random.random
-    secure_random = Crypto.Random.random.getrandbits
-except ImportError:
-    import OpenSSL
-    secure_random = lambda x: long(binascii.hexlify(OpenSSL.rand.bytes(x>>3)), 16)
-
 user_path = os.path.expanduser('~')
 KEYRING = [user_path+'/.gnupg/pubring.gpg']
 SECRET_KEYRING = [user_path+'/.gnupg/secring.gpg']
