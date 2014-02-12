@@ -221,7 +221,7 @@ class Axolotl:
         msg1 = self.enc(self.state['HKs'], str(self.state['Ns']).zfill(3) +
                         str(self.state['PNs']).zfill(3) + self.state['DHRs'])
         msg2 = self.enc(mk, plaintext)
-        msg = chr(len(msg1)) + msg1 + msg2
+        msg = msg1 + os.urandom(105-len(msg1)) + msg2
         self.state['Ns'] += 1
         self.state['CKs'] = hashlib.sha256(self.state['CKs'] + '1').digest()
         return msg
@@ -268,8 +268,8 @@ class Axolotl:
             rows = cur.fetchall()
             for row in rows:
                 if name == row[0] and other_name == row[1]:
-                    msg1 = msg[1:1+ord(msg[:1])]
-                    msg2 = msg[1+ord(msg[:1]):]
+                    msg1 = msg[:105]
+                    msg2 = msg[105:]
                     header = self.dec(binascii.a2b_base64(row[2]), msg1)
                     body = self.dec(binascii.a2b_base64(row[3]), msg2)
                     if header != '' and body != '':
@@ -293,11 +293,11 @@ class Axolotl:
         if body and body != '':
             return body
 
-        header = self.dec(self.state['HKr'], msg[1:1+ord(msg[:1])])
+        header = self.dec(self.state['HKr'], msg[:105])
         if header and header != '':
             Np = int(header[:3])
             CKp, mk = self.stageSkippedMK(self.state['HKr'], self.state['Nr'], Np, self.state['CKr'])
-            body = self.dec(mk, msg[1+ord(msg[:1]):])
+            body = self.dec(mk, msg[105:])
             if not body or body == '':
                 print 'Undecipherable message'
                 exit(1)
@@ -316,7 +316,7 @@ class Axolotl:
                 self.state['DHRs'] = None
                 self.state['bobs_first_message'] = False
         else:
-            header = self.dec(self.state['NHKr'], msg[1:1+ord(msg[:1])])
+            header = self.dec(self.state['NHKr'], msg[:105])
             if not header or header == '':
                 print 'Undecipherable message'
                 exit(1)
@@ -334,7 +334,7 @@ class Axolotl:
                 NHKp = pbkdf2(RKp, b'\x03', 10, prf='hmac-sha256')
                 CKp = pbkdf2(RKp, b'\x05', 10, prf='hmac-sha256')
             CKp, mk = self.stageSkippedMK(HKp, 0, Np, CKp)
-            body = self.dec(mk, msg[1+ord(msg[:1]):])
+            body = self.dec(mk, msg[105:])
             if not body or body == '':
                 print 'Undecipherable message'
                 exit(1)
