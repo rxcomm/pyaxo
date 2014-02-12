@@ -214,7 +214,7 @@ class Axolotl:
                         str(self.state['PNs']).zfill(3) + self.state['DHRs'])
         msg2 = self.enc(mk, plaintext)
         pad_length = 106 - len(msg1)
-        pad = chr(pad_length) * pad_length
+        pad = os.urandom(pad_length - 1) + chr(pad_length)
         msg = msg1 + pad + msg2
         self.state['Ns'] += 1
         self.state['CKs'] = hashlib.sha256(self.state['CKs'] + '1').digest()
