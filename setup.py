@@ -7,7 +7,7 @@ import os
 import pwd
 
 setup(name='Axolotl',
-      version='0.1',
+      version='0.2',
       description='Python implementation of the Axolotl ratchet protocol',
       author='David R. Andersen',
       url='https://github.com/rxcomm/pyaxo',
