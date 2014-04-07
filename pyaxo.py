@@ -34,6 +34,27 @@ from time import time
 from passlib.utils.pbkdf2 import pbkdf2
 from curve25519 import keys
 
+# We cut out the inner cipher header to minimize bandwidth
+# and then add it back at decrypt time.
+cipher_hdr = {
+   'IDEA' :        '8c0d04010308',
+   '3DES' :        '8c0d04020308',
+   'CAST5' :       '8c0d04030308',
+   'BLOWFISH' :    '8c0d04040308',
+   #'RESERVED1' :   '8c0d04050308',
+   #'RESERVED2' :   '8c0d04060308',
+   'AES' :         '8c0d04070308',
+   'AES192' :      '8c0d04080308',
+   'AES256' :      '8c0d04090308',
+   'TWOFISH' :     '8c0d040a0308',
+   'CAMELLIA128' : '8c0d040b0308',
+   'CAMELLIA192' : '8c0d040c0308',
+   'CAMELLIA256' : '8c0d040d0308'
+}
+
+GPG_CIPHER = 'AES256'
+GPG_HEADER = binascii.unhexlify(cipher_hdr[GPG_CIPHER])
+
 user_path = os.path.expanduser('~')
 KEYRING = [user_path+'/.gnupg/pubring.gpg']
 SECRET_KEYRING = [user_path+'/.gnupg/secring.gpg']
@@ -223,14 +244,13 @@ class Axolotl:
 
     def enc(self, key, plaintext):
         key = binascii.hexlify(key)
-        msg = gpg.encrypt(plaintext, recipients=None, symmetric='AES256', armor=False,
+        msg = gpg.encrypt(plaintext, recipients=None, symmetric=GPG_CIPHER, armor=False,
                                 always_trust=True, passphrase=key)
         return msg.data[6:]
 
     def dec(self, key, encrypted):
         key = binascii.hexlify(key)
-        msg = gpg.decrypt(binascii.unhexlify('8c0d04090308') + encrypted,
-        #msg = gpg.decrypt(encrypted,
+        msg = gpg.decrypt(GPG_HEADER + encrypted,
                           passphrase=key, always_trust=True)
         return msg.data
 
