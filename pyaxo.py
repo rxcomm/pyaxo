@@ -78,7 +78,7 @@ class Axolotl:
             self.db = self.openDB()
         except sqlite3.OperationalError:
             print 'Bad sql! Password problem - cannot create the database.'
-            exit(1)
+            sys.exit(1)
         self.mode = None
         self.staged_HK_mk = {}
         self.state = {}
@@ -126,7 +126,7 @@ class Axolotl:
 
     def tripleDH(self, a, a0, B, B0):
         if self.mode == None:
-            exit(1)
+            sys.exit(1)
         if self.mode:
             return hashlib.sha256(self.genDH(a, B0) + self.genDH(a0, B) + self.genDH(a0, B0)).digest()
         else:
@@ -157,7 +157,7 @@ class Axolotl:
             ans = raw_input('Confirm? y/N: ').strip()
             if ans != 'y':
                 print 'Key fingerprint not confirmed - exiting...'
-                exit()
+                sys.exit()
         if self.state['DHIs'] < other_identityKey:
             self.mode = True
         else:
@@ -166,7 +166,7 @@ class Axolotl:
         mkey = self.tripleDH(self.state['DHIs_priv'], self.handshakeKey,
                                   other_identityKey, other_handshakeKey)
         if self.mode == None: # mode not selected
-            exit(1)
+            sys.exit(1)
         if self.mode: # alice mode
             RK = pbkdf2(mkey, b'\x00', 10, prf='hmac-sha256')
             HKs = pbkdf2(mkey, b'\x01', 10, prf='hmac-sha256')
@@ -318,7 +318,7 @@ class Axolotl:
             body = self.dec(mk, msg[106:])
             if not body or body == '':
                 print 'Undecipherable message'
-                exit(1)
+                sys.exit(1)
             if self.state['bobs_first_message']:
                 self.state['DHRr'] = header[6:]
                 self.state['RK'] = hashlib.sha256(self.state['RK'] +
@@ -337,7 +337,7 @@ class Axolotl:
             header = self.dec(self.state['NHKr'], msg1)
             if not header or header == '':
                 print 'Undecipherable message'
-                exit(1)
+                sys.exit(1)
             Np = int(header[:3])
             PNp = int(header[3:6])
             DHRp = header[6:]
@@ -355,7 +355,7 @@ class Axolotl:
             body = self.dec(mk, msg[106:])
             if not body or body == '':
                 print 'Undecipherable message'
-                exit(1)
+                sys.exit(1)
             self.state['RK'] = RKp
             self.state['HKr'] = HKp
             self.state['NHKr'] = NHKp
@@ -480,7 +480,7 @@ class Axolotl:
                 cur.execute('SELECT * FROM conversations')
             except sqlite3.OperationalError:
                 print 'Bad sql! Password problem - cannot loadState()'
-                exit(1)
+                sys.exit(1)
             rows = cur.fetchall()
             for row in rows:
                 if row[0] == name and row[1] == other_name:
@@ -527,7 +527,7 @@ class Axolotl:
                         return db
                     else:
                         print 'Bad passphrase!'
-                        exit(1)
+                        sys.exit(1)
                 else:
                     sql = f.read()
                     db.cursor().executescript(sql)
