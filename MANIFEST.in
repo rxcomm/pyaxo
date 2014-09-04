@@ -1,0 +1,9 @@
+include COPYING
+include file.txt
+include README
+include test.py
+include test2.py
+include test3.py
+include threetoe.py
+recursive-include examples *
+recursive-include utilities *
