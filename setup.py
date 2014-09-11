@@ -1,16 +1,44 @@
 try:
     from setuptools import setup
-except:
+except ImportError:
     from distutils.core import setup
-import zipfile
-import os
-import pwd
 
-setup(name='Axolotl',
-      version='0.2',
-      description='Python implementation of the Axolotl ratchet protocol',
-      author='David R. Andersen',
-      url='https://github.com/rxcomm/pyaxo',
-      py_modules=['pyaxo'],
-      install_requires=['python-gnupg >= 0.3.5', 'passlib >= 1.6.1'],
-     )
+import platform
+from glob import glob
+from subprocess import call
+
+distros = ('debian', 'ubuntu')
+installed = False
+if platform.linux_distribution()[0].lower() in distros:
+    installed = not call(['apt-get',  'install', '-y', 'python-dev'])
+if not installed:
+    print 'Cannot verify if python-dev is installed. You might have do it manually'
+
+BASE_DIRECTORY = '/usr/share/pyaxo'
+
+setup(
+    name='pyaxo',
+    version='0.3',
+    description='Python implementation of the Axolotl ratchet protocol',
+    author='David R. Andersen',
+    author_email='k0rx@RXcomm.net',
+    url='https://github.com/rxcomm/pyaxo',
+    py_modules=[
+        'pyaxo'
+    ],
+    install_requires=[
+        'curve25519-donna',
+        'passlib>=1.6.1',
+        'python-gnupg>=0.3.5',
+    ],
+    dependency_links=[
+        'git+https://github.com/agl/curve25519-donna#egg=curve25519-donna',
+    ],
+    data_files=[
+        (BASE_DIRECTORY + '/examples', glob('examples/*')),
+        (BASE_DIRECTORY + '/tests', glob('tests/*')),
+        (BASE_DIRECTORY + '/utilities', glob('utilities/*')),
+        (BASE_DIRECTORY, ['COPYING']),
+        (BASE_DIRECTORY, ['README.rst']),
+    ],
+)

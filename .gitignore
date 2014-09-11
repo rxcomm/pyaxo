@@ -1,5 +1,6 @@
 *.pyc
-axolotl.db
-Axolotl.egg-info/
+tests/axolotl.db
+.idea/
 build/
 dist/
+pyaxo.egg-info/
