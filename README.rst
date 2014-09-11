@@ -21,19 +21,20 @@ You can find the most recent specification of the protocol
 
 Installation instructions
 -------------------------
-First make sure that you have the following::
-
-    sudo apt-get install python-dev
-
 If you use `pip`_, install pyaxo with::
 
     sudo pip install pyaxo
 
 **pyaxo will be ready for use!**
 
-If you do not use *pip*, you will have to install the
-`curve25519-donna`_ package manually, since pyaxo requires
-it for doing the ECDHE calculations. It can be installed by::
+If you do not use *pip*, first make sure that you have the
+following::
+
+    sudo apt-get install python-dev
+
+You will have to install the `curve25519-donna`_ package
+manually, since pyaxo requires it for doing the ECDHE
+calculations. It can be installed by::
 
     git clone https://github.com/agl/curve25519-donna
     cd curve25519-donna

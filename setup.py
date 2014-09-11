@@ -8,10 +8,10 @@ from glob import glob
 from subprocess import call
 
 distros = ('debian', 'ubuntu')
-installed = False
+not_installed = False
 if platform.linux_distribution()[0].lower() in distros:
-    installed = not call(['apt-get',  'install', '-y', 'python-dev'])
-if not installed:
+    not_installed = call(['apt-get',  'install', '-y', 'python-dev'])
+if not_installed:
     print 'Cannot verify if python-dev is installed. You might have do it manually'
 
 BASE_DIRECTORY = '/usr/share/pyaxo'
