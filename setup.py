@@ -8,7 +8,7 @@ from glob import glob
 from subprocess import call
 
 distros = ('debian', 'ubuntu')
-not_installed = False
+not_installed = True
 if platform.linux_distribution()[0].lower() in distros:
     not_installed = call(['apt-get',  'install', '-y', 'python-dev'])
 if not_installed:
