@@ -18,7 +18,7 @@ BASE_DIRECTORY = '/usr/share/pyaxo'
 
 setup(
     name='pyaxo',
-    version='0.3',
+    version='0.3.2',
     description='Python implementation of the Axolotl ratchet protocol',
     author='David R. Andersen',
     author_email='k0rx@RXcomm.net',
