@@ -18,7 +18,7 @@ BASE_DIRECTORY = '/usr/share/pyaxo'
 
 setup(
     name='pyaxo',
-    version='0.3.2',
+    version='0.3.5',
     description='Python implementation of the Axolotl ratchet protocol',
     author='David R. Andersen',
     author_email='k0rx@RXcomm.net',
@@ -32,7 +32,7 @@ setup(
         'python-gnupg>=0.3.5',
     ],
     dependency_links=[
-        'https://github.com/agl/curve25519-donna/archive/master.zip#egg=curve25519-donna',
+        'git+https://github.com/agl/curve25519-donna.git#egg=curve25519-donna-1.2.1',
     ],
     data_files=[
         (BASE_DIRECTORY + '/examples', glob('examples/*')),
