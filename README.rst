@@ -25,6 +25,10 @@ If you use `pip`_, install pyaxo with::
 
     sudo pip install pyaxo
 
+or, for pip version >= 1.5::
+
+    sudo pip install --process-dependency-links pyaxo
+
 **pyaxo will be ready for use!**
 
 If you do not use *pip*, first make sure that you have the
@@ -32,18 +36,10 @@ following::
 
     sudo apt-get install python-dev
 
-You will have to install the `curve25519-donna`_ package
-manually, since pyaxo requires it for doing the ECDHE
-calculations. It can be installed by::
-
-    git clone https://github.com/agl/curve25519-donna
-    cd curve25519-donna
-    sudo python setup.py install
-
-pyaxo also uses `python-gnupg`_ and `passlib`_, and if you have
-*setuptools* installed, these packages will be downloaded and
-installed automatically. You may need some additional python
-modules as well. Check the imports list.
+pyaxo also uses `python-gnupg`_, `curve25519-donna`_, and `passlib`_,
+and if you have *setuptools* installed, these packages will be
+downloaded and installed automatically. You may need some additional
+python modules as well. Check the imports list.
 
 Finally, from pyaxo's source folder, install with::
 
