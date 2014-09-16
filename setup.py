@@ -32,7 +32,7 @@ setup(
         'python-gnupg>=0.3.5',
     ],
     dependency_links=[
-        'git+https://github.com/agl/curve25519-donna#egg=curve25519-donna',
+        'https://github.com/agl/curve25519-donna/archive/master.zip#egg=curve25519-donna',
     ],
     data_files=[
         (BASE_DIRECTORY + '/examples', glob('examples/*')),
