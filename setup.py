@@ -12,7 +12,7 @@ not_installed = True
 if platform.linux_distribution()[0].lower() in distros:
     not_installed = call(['apt-get',  'install', '-y', 'python-dev'])
 if not_installed:
-    print 'Cannot verify if python-dev is installed. You might have do it manually'
+    print 'Cannot verify if python-dev is installed. You might have to do it manually'
 
 BASE_DIRECTORY = '/usr/share/pyaxo'
 
