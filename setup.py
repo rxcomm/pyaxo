@@ -7,12 +7,28 @@ import platform
 from glob import glob
 from subprocess import call
 
-distros = ('debian', 'ubuntu')
+distro = platform.linux_distribution()[0].lower()
+manager = {
+    'debian': 'apt-get',
+    'ubuntu': 'apt-get',
+    'fedora': 'yum',
+}
+packages = {
+    'python-dev': {'apt-get': 'python-dev', 'yum': 'python-devel'},
+}
+packages_string = ' '.join(packages.keys())
 not_installed = True
-if platform.linux_distribution()[0].lower() in distros:
-    not_installed = call(['apt-get',  'install', '-y', 'python-dev'])
+
+if distro in manager:
+    packages_list = []
+    for package in packages:
+        packages_list.append(packages[package][manager[distro]])
+    not_installed = call([manager[distro], 'install', '-y'] + packages_list)
+    packages_string = ' '.join(packages_list)
+
 if not_installed:
-    print 'Cannot verify if python-dev is installed. You might have to do it manually'
+    print 'Cannot verify if all/some of these packages are installed: ' + packages_string + '.You might have to do ' \
+                                                                                            'it manually'
 
 BASE_DIRECTORY = '/usr/share/pyaxo'
 
