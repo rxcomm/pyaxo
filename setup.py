@@ -34,7 +34,7 @@ BASE_DIRECTORY = '/usr/share/pyaxo'
 
 setup(
     name='pyaxo',
-    version='0.3.7',
+    version='0.3.8',
     description='Python implementation of the Axolotl ratchet protocol',
     author='David R. Andersen',
     author_email='k0rx@RXcomm.net',
@@ -43,12 +43,9 @@ setup(
         'pyaxo'
     ],
     install_requires=[
-        'curve25519-donna',
+        'curve25519-donna>=1.3',
         'passlib>=1.6.1',
         'python-gnupg>=0.3.5',
-    ],
-    dependency_links=[
-        'git+https://github.com/agl/curve25519-donna.git#egg=curve25519-donna-1.2.1',
     ],
     data_files=[
         (BASE_DIRECTORY + '/examples', glob('examples/*')),
