@@ -25,9 +25,6 @@ If you use `pip`_, install pyaxo with::
 
     sudo pip install pyaxo
 
-or, for pip version >= 1.5::
-
-    sudo pip install --process-dependency-links pyaxo
 
 **pyaxo will be ready for use!**
 
@@ -54,7 +51,7 @@ them yet, but it should be straightforward.
 
 Bugs, etc. should be reported to the *pyaxo* github `issues page`_.
 
-.. _`curve25519-donna`: https://github.com/agl/curve25519-donna
+.. _`curve25519-donna`: https://pypi.python.org/pypi/curve25519-donna
 .. _`issues page`: https://github.com/rxcomm/pyaxo/issues
 .. _`passlib`: https://pypi.python.org/pypi/passlib
 .. _`pip`: https://pypi.python.org/pypi/pip
