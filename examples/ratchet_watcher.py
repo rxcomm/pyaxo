@@ -32,7 +32,7 @@ topic = ['   My Name',
           '        Ns',
           '        Nr',
           '       PNs',
-          '   bobs_fm',
+          '   ratchet',
           '      mode']
 
 def hilite(text, c=False):
@@ -71,7 +71,7 @@ while True:
         elif topic[i]=='        Ns' or topic[i]=='        Nr' or topic[i]=='       PNs':
             var = data[0][0][i]
             var2 = data[1][0][i]
-        elif topic[i] == '   bobs_fm':
+        elif topic[i] == '   ratchet':
             var = 'F'
             var2 = 'F'
             if data[0][0][i] == 1:
