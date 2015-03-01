@@ -229,6 +229,7 @@ class Axolotl:
     def encrypt(self, plaintext):
         if self.state['DHRs'] == None:
             self.state['DHRs_priv'], self.state['DHRs'] = self.genKey()
+            self.state['PNs'] = self.state['Ns']
             self.state['Ns'] = 0
         mk = hashlib.sha256(self.state['CKs'] + '0').digest()
         msg1 = self.enc(self.state['HKs'], str(self.state['Ns']).zfill(3) +
