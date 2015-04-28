@@ -163,11 +163,19 @@ class Axolotl:
             self.mode = True
         else:
             self.mode = False
-        DHIr = other_identityKey
         mkey = self.tripleDH(self.state['DHIs_priv'], self.handshakeKey,
-                                  other_identityKey, other_handshakeKey)
-        if self.mode == None: # mode not selected
-            sys.exit(1)
+                             other_identityKey, other_handshakeKey)
+
+        self.createState(other_name, mkey,
+                         other_identityKey=other_identityKey,
+                         other_ratchetKey=other_ratchetKey)
+
+    def createState(self, other_name, mkey, mode=None, other_identityKey=None, other_ratchetKey=None):
+        if mode is not None:
+            self.mode = mode
+        else:
+            if self.mode is None: # mode not selected
+                sys.exit(1)
         if self.mode: # alice mode
             RK = pbkdf2(mkey, b'\x00', 10, prf='hmac-sha256')
             HKs = None
@@ -200,6 +208,7 @@ class Axolotl:
             Nr = 0
             PNs = 0
             ratchet_flag = False
+        DHIr = other_identityKey
 
         self.state = \
                { 'name': self.name,
@@ -414,6 +423,7 @@ class Axolotl:
         HKr = 0 if self.state['HKr'] is None else binascii.b2a_base64(self.state['HKr']).strip()
         CKs = 0 if self.state['CKs'] is None else binascii.b2a_base64(self.state['CKs']).strip()
         CKr = 0 if self.state['CKr'] is None else binascii.b2a_base64(self.state['CKr']).strip()
+        DHIr = 0 if self.state['DHIr'] is None else binascii.b2a_base64(self.state['DHIr']).strip()
         DHRs_priv = 0 if self.state['DHRs_priv'] is None else binascii.b2a_base64(self.state['DHRs_priv']).strip()
         DHRs = 0 if self.state['DHRs'] is None else binascii.b2a_base64(self.state['DHRs']).strip()
         DHRr = 0 if self.state['DHRr'] is None else binascii.b2a_base64(self.state['DHRr']).strip()
@@ -455,7 +465,7 @@ class Axolotl:
               CKr, \
               binascii.b2a_base64(self.state['DHIs_priv']).strip(), \
               binascii.b2a_base64(self.state['DHIs']).strip(), \
-              binascii.b2a_base64(self.state['DHIr']).strip(), \
+              DHIr, \
               DHRs_priv, \
               DHRs, \
               DHRr, \
@@ -488,7 +498,6 @@ class Axolotl:
                              'NHKr': binascii.a2b_base64(row[6]),
                              'DHIs_priv': binascii.a2b_base64(row[9]),
                              'DHIs': binascii.a2b_base64(row[10]),
-                             'DHIr': binascii.a2b_base64(row[11]),
                              'CONVid': binascii.a2b_base64(row[15]),
                              'Ns': row[16],
                              'Nr': row[17],
@@ -499,6 +508,7 @@ class Axolotl:
                     self.state['HKr'] = None if row[4] == '0' else binascii.a2b_base64(row[4])
                     self.state['CKs'] = None if row[7] == '0' else binascii.a2b_base64(row[7])
                     self.state['CKr'] = None if row[8] == '0' else binascii.a2b_base64(row[8])
+                    self.state['DHIr'] = None if row[11] == '0' else binascii.a2b_base64(row[11])
                     self.state['DHRs_priv'] = None if row[12] == '0' else binascii.a2b_base64(row[12])
                     self.state['DHRs'] = None if row[13] == '0' else binascii.a2b_base64(row[13])
                     self.state['DHRr'] = None if row[14] == '0' else binascii.a2b_base64(row[14])
