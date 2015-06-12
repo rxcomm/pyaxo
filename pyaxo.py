@@ -65,6 +65,7 @@ gpg = gnupg.GPG(gnupghome=user_path+'/.axolotl', gpgbinary=GPGBINARY, keyring=KE
                 '--personal-digest-preferences=sha256','--s2k-digest-algo=sha256'])
 gpg.encoding = 'utf-8'
 
+
 class Axolotl:
 
     def __init__(self, name, dbname='axolotl.db', dbpassphrase=''):
@@ -117,7 +118,7 @@ class Axolotl:
               Ns INTEGER, \
               Nr INTEGER, \
               PNs INTEGER, \
-              bobs_first_message INTEGER, \
+              ratchet_flag INTEGER, \
               mode INTEGER \
             )')
             cur.execute('CREATE UNIQUE INDEX IF NOT EXISTS \
@@ -162,18 +163,26 @@ class Axolotl:
             self.mode = True
         else:
             self.mode = False
-        DHIr = other_identityKey
         mkey = self.tripleDH(self.state['DHIs_priv'], self.handshakeKey,
-                                  other_identityKey, other_handshakeKey)
-        if self.mode == None: # mode not selected
-            sys.exit(1)
+                             other_identityKey, other_handshakeKey)
+
+        self.createState(other_name, mkey,
+                         other_identityKey=other_identityKey,
+                         other_ratchetKey=other_ratchetKey)
+
+    def createState(self, other_name, mkey, mode=None, other_identityKey=None, other_ratchetKey=None):
+        if mode is not None:
+            self.mode = mode
+        else:
+            if self.mode is None: # mode not selected
+                sys.exit(1)
         if self.mode: # alice mode
             RK = pbkdf2(mkey, b'\x00', 10, prf='hmac-sha256')
-            HKs = pbkdf2(mkey, b'\x01', 10, prf='hmac-sha256')
+            HKs = None
             HKr = pbkdf2(mkey, b'\x02', 10, prf='hmac-sha256')
             NHKs = pbkdf2(mkey, b'\x03', 10, prf='hmac-sha256')
             NHKr = pbkdf2(mkey, b'\x04', 10, prf='hmac-sha256')
-            CKs = pbkdf2(mkey, b'\x05', 10, prf='hmac-sha256')
+            CKs = None
             CKr = pbkdf2(mkey, b'\x06', 10, prf='hmac-sha256')
             DHRs_priv = None
             DHRs = None
@@ -182,15 +191,15 @@ class Axolotl:
             Ns = 0
             Nr = 0
             PNs = 0
-            bobs_first_message = False
+            ratchet_flag = True
         else: # bob mode
             RK = pbkdf2(mkey, b'\x00', 10, prf='hmac-sha256')
             HKs = pbkdf2(mkey, b'\x02', 10, prf='hmac-sha256')
-            HKr = pbkdf2(mkey, b'\x01', 10, prf='hmac-sha256')
+            HKr = None
             NHKs = pbkdf2(mkey, b'\x04', 10, prf='hmac-sha256')
             NHKr = pbkdf2(mkey, b'\x03', 10, prf='hmac-sha256')
             CKs = pbkdf2(mkey, b'\x06', 10, prf='hmac-sha256')
-            CKr = pbkdf2(mkey, b'\x05', 10, prf='hmac-sha256')
+            CKr = None
             DHRs_priv = self.state['DHRs_priv']
             DHRs = self.state['DHRs']
             DHRr = None
@@ -198,7 +207,8 @@ class Axolotl:
             Ns = 0
             Nr = 0
             PNs = 0
-            bobs_first_message = True
+            ratchet_flag = False
+        DHIr = other_identityKey
 
         self.state = \
                { 'name': self.name,
@@ -220,17 +230,27 @@ class Axolotl:
                  'Ns': Ns,
                  'Nr': Nr,
                  'PNs': PNs,
-                 'bobs_first_message': bobs_first_message,
+                 'ratchet_flag': ratchet_flag,
                }
 
         self.ratchetKey = False
         self.ratchetPKey = False
 
     def encrypt(self, plaintext):
-        if self.state['DHRs'] == None:
+        if self.state['ratchet_flag']:
             self.state['DHRs_priv'], self.state['DHRs'] = self.genKey()
+            self.state['HKs'] = self.state['NHKs']
+            self.state['RK'] = hashlib.sha256(self.state['RK'] +
+                                              self.genDH(self.state['DHRs_priv'], self.state['DHRr'])).digest()
+            if self.mode:
+                self.state['NHKs'] = pbkdf2(self.state['RK'], b'\x03', 10, prf='hmac-sha256')
+                self.state['CKs'] = pbkdf2(self.state['RK'], b'\x05', 10, prf='hmac-sha256')
+            else:
+                self.state['NHKs'] = pbkdf2(self.state['RK'], b'\x04', 10, prf='hmac-sha256')
+                self.state['CKs'] = pbkdf2(self.state['RK'], b'\x06', 10, prf='hmac-sha256')
             self.state['PNs'] = self.state['Ns']
             self.state['Ns'] = 0
+            self.state['ratchet_flag'] = False
         mk = hashlib.sha256(self.state['CKs'] + '0').digest()
         msg1 = self.enc(self.state['HKs'], str(self.state['Ns']).zfill(3) +
                         str(self.state['PNs']).zfill(3) + self.state['DHRs'])
@@ -312,7 +332,9 @@ class Axolotl:
         if body and body != '':
             return body
 
-        header = self.dec(self.state['HKr'], msg1)
+        header = None
+        if self.state['HKr']:
+            header = self.dec(self.state['HKr'], msg1)
         if header and header != '':
             Np = int(header[:3])
             CKp, mk = self.stageSkippedMK(self.state['HKr'], self.state['Nr'], Np, self.state['CKr'])
@@ -320,32 +342,18 @@ class Axolotl:
             if not body or body == '':
                 print 'Undecipherable message'
                 sys.exit(1)
-            if self.state['bobs_first_message']:
-                self.state['DHRr'] = header[6:]
-                self.state['RK'] = hashlib.sha256(self.state['RK'] +
-                                     self.genDH(self.state['DHRs_priv'], self.state['DHRr'])).digest()
-                self.state['HKs'] = self.state['NHKs']
-                if self.mode:
-                    self.state['NHKs'] = pbkdf2(self.state['RK'], b'\x03', 10, prf='hmac-sha256')
-                    self.state['CKs'] = pbkdf2(self.state['RK'], b'\x05', 10, prf='hmac-sha256')
-                else:
-                    self.state['NHKs'] = pbkdf2(self.state['RK'], b'\x04', 10, prf='hmac-sha256')
-                    self.state['CKs'] = pbkdf2(self.state['RK'], b'\x06', 10, prf='hmac-sha256')
-                self.state['DHRs_priv'] = None
-                self.state['DHRs'] = None
-                self.state['bobs_first_message'] = False
         else:
             header = self.dec(self.state['NHKr'], msg1)
-            if not header or header == '':
+            if self.state['ratchet_flag'] or not header or header == '':
                 print 'Undecipherable message'
                 sys.exit(1)
             Np = int(header[:3])
             PNp = int(header[3:6])
             DHRp = header[6:]
-            self.stageSkippedMK(self.state['HKr'], self.state['Nr'], PNp, self.state['CKr'])
-            RKp = hashlib.sha256(self.state['RK'] +
-                  self.genDH(self.state['DHRs_priv'], self.state['DHRr'])).digest()
+            if self.state['CKr']:
+                self.stageSkippedMK(self.state['HKr'], self.state['Nr'], PNp, self.state['CKr'])
             HKp = self.state['NHKr']
+            RKp = hashlib.sha256(self.state['RK'] + self.genDH(self.state['DHRs_priv'], DHRp)).digest()
             if self.mode:
                 NHKp = pbkdf2(RKp, b'\x04', 10, prf='hmac-sha256')
                 CKp = pbkdf2(RKp, b'\x06', 10, prf='hmac-sha256')
@@ -361,17 +369,9 @@ class Axolotl:
             self.state['HKr'] = HKp
             self.state['NHKr'] = NHKp
             self.state['DHRr'] = DHRp
-            self.state['RK'] = hashlib.sha256(self.state['RK'] +
-                                 self.genDH(self.state['DHRs_priv'], self.state['DHRr'])).digest()
-            self.state['HKs'] = self.state['NHKs']
-            if self.mode:
-                self.state['NHKs'] = pbkdf2(self.state['RK'], b'\x03', 10, prf='hmac-sha256')
-                self.state['CKs'] = pbkdf2(self.state['RK'], b'\x05', 10, prf='hmac-sha256')
-            else:
-                self.state['NHKs'] = pbkdf2(self.state['RK'], b'\x04', 10, prf='hmac-sha256')
-                self.state['CKs'] = pbkdf2(self.state['RK'], b'\x06', 10, prf='hmac-sha256')
             self.state['DHRs_priv'] = None
             self.state['DHRs'] = None
+            self.state['ratchet_flag'] = True
         self.commitSkippedMK()
         self.state['Nr'] = Np + 1
         self.state['CKr'] = CKp
@@ -419,10 +419,15 @@ class Axolotl:
             print 'Your Handshake key is not available'
 
     def saveState(self):
+        HKs = 0 if self.state['HKs'] is None else binascii.b2a_base64(self.state['HKs']).strip()
+        HKr = 0 if self.state['HKr'] is None else binascii.b2a_base64(self.state['HKr']).strip()
+        CKs = 0 if self.state['CKs'] is None else binascii.b2a_base64(self.state['CKs']).strip()
+        CKr = 0 if self.state['CKr'] is None else binascii.b2a_base64(self.state['CKr']).strip()
+        DHIr = 0 if self.state['DHIr'] is None else binascii.b2a_base64(self.state['DHIr']).strip()
         DHRs_priv = 0 if self.state['DHRs_priv'] is None else binascii.b2a_base64(self.state['DHRs_priv']).strip()
         DHRs = 0 if self.state['DHRs'] is None else binascii.b2a_base64(self.state['DHRs']).strip()
         DHRr = 0 if self.state['DHRr'] is None else binascii.b2a_base64(self.state['DHRr']).strip()
-        bobs_first_message = 1 if self.state['bobs_first_message'] else 0
+        ratchet_flag = 1 if self.state['ratchet_flag'] else 0
         mode = 1 if self.mode else 0
         with self.db:
             cur = self.db.cursor()
@@ -446,21 +451,21 @@ class Axolotl:
               Ns, \
               Nr, \
               PNs, \
-              bobs_first_message, \
+              ratchet_flag, \
               mode \
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', \
             ( self.state['name'], \
               self.state['other_name'], \
               binascii.b2a_base64(self.state['RK']).strip(), \
-              binascii.b2a_base64(self.state['HKs']).strip(), \
-              binascii.b2a_base64(self.state['HKr']).strip(), \
+              HKs, \
+              HKr, \
               binascii.b2a_base64(self.state['NHKs']).strip(), \
               binascii.b2a_base64(self.state['NHKr']).strip(), \
-              binascii.b2a_base64(self.state['CKs']).strip(), \
-              binascii.b2a_base64(self.state['CKr']).strip(), \
+              CKs, \
+              CKr, \
               binascii.b2a_base64(self.state['DHIs_priv']).strip(), \
               binascii.b2a_base64(self.state['DHIs']).strip(), \
-              binascii.b2a_base64(self.state['DHIr']).strip(), \
+              DHIr, \
               DHRs_priv, \
               DHRs, \
               DHRr, \
@@ -468,7 +473,7 @@ class Axolotl:
               self.state['Ns'], \
               self.state['Nr'], \
               self.state['PNs'], \
-              bobs_first_message, \
+              ratchet_flag, \
               mode \
             ))
         self.writeDB()
@@ -489,26 +494,26 @@ class Axolotl:
                            { 'name': row[0],
                              'other_name': row[1],
                              'RK': binascii.a2b_base64(row[2]),
-                             'HKs': binascii.a2b_base64(row[3]),
-                             'HKr': binascii.a2b_base64(row[4]),
                              'NHKs': binascii.a2b_base64(row[5]),
                              'NHKr': binascii.a2b_base64(row[6]),
-                             'CKs': binascii.a2b_base64(row[7]),
-                             'CKr': binascii.a2b_base64(row[8]),
                              'DHIs_priv': binascii.a2b_base64(row[9]),
                              'DHIs': binascii.a2b_base64(row[10]),
-                             'DHIr': binascii.a2b_base64(row[11]),
                              'CONVid': binascii.a2b_base64(row[15]),
                              'Ns': row[16],
                              'Nr': row[17],
                              'PNs': row[18],
                            }
                     self.name = self.state['name']
+                    self.state['HKs'] = None if row[3] == '0' else binascii.a2b_base64(row[3])
+                    self.state['HKr'] = None if row[4] == '0' else binascii.a2b_base64(row[4])
+                    self.state['CKs'] = None if row[7] == '0' else binascii.a2b_base64(row[7])
+                    self.state['CKr'] = None if row[8] == '0' else binascii.a2b_base64(row[8])
+                    self.state['DHIr'] = None if row[11] == '0' else binascii.a2b_base64(row[11])
                     self.state['DHRs_priv'] = None if row[12] == '0' else binascii.a2b_base64(row[12])
                     self.state['DHRs'] = None if row[13] == '0' else binascii.a2b_base64(row[13])
                     self.state['DHRr'] = None if row[14] == '0' else binascii.a2b_base64(row[14])
-                    bobs_first_message = row[19]
-                    self.state['bobs_first_message'] = True if bobs_first_message == 1 \
+                    ratchet_flag = row[19]
+                    self.state['ratchet_flag'] = True if ratchet_flag == 1 \
                                                        else False
                     mode = row[20]
                     self.mode = True if mode == 1 else False
