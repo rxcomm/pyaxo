@@ -49,6 +49,14 @@ There are several examples showing usage. There are also
 certain applications. I haven't put together an example using
 them yet, but it should be straightforward.
 
+Protocol Update
+---------------
+pyaxo 0.4 was updated according to the latest (Oct 1, 2014) version
+of the protocol, which changed the order of the ratcheting. For that
+reason, old conversations (created with pyaxo < 0.4) might not work
+properly after the update. We suggest that users update pyaxo and
+restart their conversations.
+
 Bugs, etc. should be reported to the *pyaxo* github `issues page`_.
 
 .. _`curve25519-donna`: https://pypi.python.org/pypi/curve25519-donna
