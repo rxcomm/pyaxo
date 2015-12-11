@@ -68,9 +68,10 @@ gpg.encoding = 'utf-8'
 
 class Axolotl:
 
-    def __init__(self, name, dbname='axolotl.db', dbpassphrase=''):
+    def __init__(self, name, dbname='axolotl.db', dbpassphrase='', nonthreaded_sql=True):
         self.name = name
         self.dbname = dbname
+        self.nonthreaded_sql = nonthreaded_sql
         if dbpassphrase != '' or dbpassphrase is None:
             self.dbpassphrase = dbpassphrase
         else:
@@ -522,7 +523,7 @@ class Axolotl:
 
     def openDB(self):
 
-        db = sqlite3.connect(':memory:')
+        db = sqlite3.connect(':memory:', check_same_thread=self.nonthreaded_sql)
 
         try:
             with open(self.dbname, 'rb') as f:
