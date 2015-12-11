@@ -177,7 +177,6 @@ def receiveThread(sock, stdscr, input_win, output_win):
         input_win.cursyncup()
         input_win.noutrefresh()
         output_win.noutrefresh()
-        sleep(0.01) # write time for axo db
         screen_needs_update = True
         lock.release()
 
@@ -215,7 +214,6 @@ def chatThread(sock):
                 closeWindows(stdscr)
                 a.saveState()
                 sys.exit()
-            #sleep(0.01) # write time for axo db
             lock.release()
     except KeyboardInterrupt:
         a.saveState()
@@ -232,7 +230,6 @@ def tor(port, controlport, tor_dir):
                   'SocksPort'  : str(port),
                   'Log'        : [ 'NOTICE stdout', 'ERR file /tmp/tor_error_log', ],
                   'DataDirectory' : tor_dir,
-                  #'HashedControlPassword' : '16:911B47ADEC7762C860105803CBB38FBCE0AE85D030E2014256C202F124',
                  },
         completion_percent = 100,
         take_ownership = True,
@@ -273,14 +270,14 @@ if __name__ == '__main__':
 
     NICK = raw_input('Enter your nick: ')
     OTHER_NICK = raw_input('Enter the nick of the other party: ')
-    axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db',
-        dbpassphrase=getPasswd(NICK))
     lock = threading.Lock()
     screen_needs_update = False
     HOST = '127.0.0.1'
     PORT=50000
 
     if mode == '-s':
+        axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db',
+            dbpassphrase=getPasswd(NICK))
         tor_process = tor(9050, 9051, 'tor.server')
         hs = hiddenService()
         print 'Waiting for ' + OTHER_NICK + ' to connect...'
@@ -291,6 +288,8 @@ if __name__ == '__main__':
             chatThread(conn)
 
     elif mode == '-c':
+        axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db',
+            dbpassphrase=getPasswd(NICK))
         tor_process = tor(9150, 9151, 'tor.client')
         HOST = raw_input('Enter the onion server: ')
         print 'Connecting to ' + HOST + '...'
@@ -299,17 +298,17 @@ if __name__ == '__main__':
             chatThread(s)
 
     elif mode == '-g':
-         a = Axolotl(NICK, dbname=OTHER_NICK+'.db')
-         a.printKeys()
+         newaxo = Axolotl(NICK, dbname=OTHER_NICK+'.db')
+         newaxo.printKeys()
 
          ans = raw_input('Do you want to create a new Axolotl database? y/N ').strip()
          if ans == 'y':
              identity = raw_input('What is the identity key for the other party? ').strip()
              ratchet = raw_input('What is the ratchet key for the other party? ').strip()
              handshake = raw_input('What is the handshake key for the other party? ').strip()
-             a.initState(OTHER_NICK, binascii.a2b_base64(identity), binascii.a2b_base64(handshake),
+             newaxo.initState(OTHER_NICK, binascii.a2b_base64(identity), binascii.a2b_base64(handshake),
                          binascii.a2b_base64(ratchet))
-             a.saveState()
+             newaxo.saveState()
              print 'The database for ' + NICK + ' -> ' + OTHER_NICK + ' has been saved.'
          else:
              print 'OK, nothing has been saved...'
