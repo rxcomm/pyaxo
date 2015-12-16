@@ -21,26 +21,28 @@ You can find the most recent specification of the protocol
 
 Installation instructions
 -------------------------
-If you use `pip`_, install pyaxo with::
+Make sure that you have the following::
+
+    sudo apt-get install python-dev # If using Debian/Ubuntu
+    sudo yum install python-devel # If using Fedora
+
+pyaxo also uses `python-gnupg`_, `curve25519-donna`_, and `passlib`_,
+but these packages will be downloaded and installed automatically by
+`pip`_/`setuptools`_.
+
+If you use *pip*, install pyaxo with::
 
     sudo pip install pyaxo
 
+If you use *setuptools*, change to pyaxo's source folder and install
+with::
+
+    sudo python setup.py install
 
 **pyaxo will be ready for use!**
 
-If you do not use *pip*, first make sure that you have the
-following::
-
-    sudo apt-get install python-dev
-
-pyaxo also uses `python-gnupg`_, `curve25519-donna`_, and `passlib`_,
-and if you have *setuptools* installed, these packages will be
-downloaded and installed automatically. You may need some additional
-python modules as well. Check the imports list.
-
-Finally, from pyaxo's source folder, install with::
-
-    sudo python setup.py install
+If you do not use neither of those, you will have to manually install
+each dependency before running the previous command.
 
 Usage
 -----
