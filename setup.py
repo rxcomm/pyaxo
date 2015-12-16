@@ -3,38 +3,13 @@ try:
 except ImportError:
     from distutils.core import setup
 
-import platform
 from glob import glob
-from subprocess import call
-
-distro = platform.linux_distribution()[0].lower()
-manager = {
-    'debian': 'apt-get',
-    'ubuntu': 'apt-get',
-    'fedora': 'yum',
-}
-packages = {
-    'python-dev': {'apt-get': 'python-dev', 'yum': 'python-devel'},
-}
-packages_string = ' '.join(packages.keys())
-not_installed = True
-
-if distro in manager:
-    packages_list = []
-    for package in packages:
-        packages_list.append(packages[package][manager[distro]])
-    not_installed = call([manager[distro], 'install', '-y'] + packages_list)
-    packages_string = ' '.join(packages_list)
-
-if not_installed:
-    print 'Cannot verify if all/some of these packages are installed: ' + packages_string + '.You might have to do ' \
-                                                                                            'it manually'
 
 BASE_DIRECTORY = '/usr/share/pyaxo'
 
 setup(
     name='pyaxo',
-    version='0.4.4',
+    version='0.4.6',
     description='Python implementation of the Axolotl ratchet protocol',
     author='David R. Andersen',
     author_email='k0rx@RXcomm.net',
