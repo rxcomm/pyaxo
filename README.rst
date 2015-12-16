@@ -26,7 +26,7 @@ Make sure that you have the following::
     sudo apt-get install python-dev # If using Debian/Ubuntu
     sudo yum install python-devel # If using Fedora
 
-pyaxo also uses `python-gnupg`_, `curve25519-donna`_, and `passlib`_,
+pyaxo also uses `python-gnupg`_, `curve25519-donna`_ and `passlib`_,
 but these packages will be downloaded and installed automatically by
 `pip`_/`setuptools`_.
 
@@ -66,4 +66,5 @@ Bugs, etc. should be reported to the *pyaxo* github `issues page`_.
 .. _`passlib`: https://pypi.python.org/pypi/passlib
 .. _`pip`: https://pypi.python.org/pypi/pip
 .. _`python-gnupg`: https://pypi.python.org/pypi/python-gnupg/
+.. _`setuptools`: https://pypi.python.org/pypi/setuptools
 .. _`Whisper Systems Blog`: https://whispersystems.org/blog/advanced-ratcheting/
