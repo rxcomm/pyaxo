@@ -374,7 +374,7 @@ if __name__ == '__main__':
             print 'Performing per-session SMP authentication...'
             ans = raw_input('Enter SMP secret: ')
             print 'Running SMP protocol...'
-            secret = a.state['DHIs'] + ans + a.state['DHIr'] + a.state['CONVid']
+            secret = ans + a.state['CONVid']
             smp_match = smptest(secret, conn, True)
             if not smp_match:
                 ans = raw_input('Continue? (y/N) ')
@@ -396,7 +396,7 @@ if __name__ == '__main__':
             print 'Performing per-session SMP authentication...'
             ans = raw_input('Enter SMP secret: ')
             print 'Running SMP protocol...'
-            secret = a.state['DHIr'] + ans + a.state['DHIs'] + a.state['CONVid']
+            secret = ans + a.state['CONVid']
             smp_match = smptest(secret, s, False)
             if not smp_match:
                 ans = raw_input('Continue? (y/N) ')
