@@ -15,7 +15,6 @@ from smp import SMP
 from stem.control import Controller
 from stem.util import term
 from curses.textpad import Textbox
-from random import randint
 from contextlib import contextmanager
 from pyaxo import Axolotl
 from time import sleep
