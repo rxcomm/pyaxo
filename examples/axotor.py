@@ -60,10 +60,6 @@ Usage:
 
 4. .quit at the chat prompt will quit (don't forget the "dot")
 
-Be sure to edit the getPasswd() method to return your password. You can
-hard code it or get it from e.g. a keyring. It just has to match the password
-you used when creating the database.
-
 Axochat requires the Axolotl module at https://github.com/rxcomm/pyaxo
 
 Copyright (C) 2015 by David R. Andersen <k0rx@RXcomm.net>
@@ -261,9 +257,6 @@ def chatThread(sock, smp_match):
         a.saveState()
         closeWindows(stdscr)
 
-def getPasswd(nick):
-    return '1'
-
 def tor(port, controlport, tor_dir):
     tor_process = stem.process.launch_tor_with_config(
         tor_cmd = 'tor',
@@ -362,7 +355,7 @@ if __name__ == '__main__':
 
     if mode == '-s':
         axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db',
-            dbpassphrase=getPasswd(NICK))
+            dbpassphrase=getpass('Enter the database passphrase: '))
         tor_process = tor(TOR_SERVER_PORT, TOR_SERVER_CONTROL_PORT, 'tor.server')
         hs = hiddenService()
         print 'Waiting for ' + OTHER_NICK + ' to connect...'
@@ -372,7 +365,7 @@ if __name__ == '__main__':
             conn, addr = s.accept()
             print 'Connected...'
             print 'Performing per-session SMP authentication...'
-            ans = raw_input('Enter SMP secret: ')
+            ans = getpass('Enter SMP secret: ')
             print 'Running SMP protocol...'
             secret = ans + a.state['CONVid']
             smp_match = smptest(secret, conn, True)
@@ -386,7 +379,7 @@ if __name__ == '__main__':
 
     elif mode == '-c':
         axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db',
-            dbpassphrase=getPasswd(NICK))
+            dbpassphrase=getpass('Enter the database passphrase: '))
         tor_process = tor(TOR_CLIENT_PORT, TOR_CLIENT_CONTROL_PORT, 'tor.client')
         HOST = raw_input('Enter the onion server: ')
         print 'Connecting to ' + HOST + '...'
@@ -394,7 +387,7 @@ if __name__ == '__main__':
             s.connect((HOST, PORT))
             print 'Connected...'
             print 'Performing per-session SMP authentication...'
-            ans = raw_input('Enter SMP secret: ')
+            ans = getpass('Enter SMP secret: ')
             print 'Running SMP protocol...'
             secret = ans + a.state['CONVid']
             smp_match = smptest(secret, s, False)
