@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import binascii
+import hashlib
 import socket
 import threading
 import sys
@@ -8,6 +9,8 @@ import os
 import curses
 import socks
 import stem.process
+from binascii import a2b_base64
+from getpass import getpass
 from smp import SMP
 from stem.control import Controller
 from stem.util import term
@@ -409,12 +412,42 @@ if __name__ == '__main__':
 
          ans = raw_input('Do you want to create a new Axolotl database? y/N ')
          if ans == 'y':
-             identity = raw_input('What is the identity key for the other party? ')
-             ratchet = raw_input('What is the ratchet key for the other party? ')
-             handshake = raw_input('What is the handshake key for the other party? ')
-             newaxo.initState(OTHER_NICK, binascii.a2b_base64(identity),
-                              binascii.a2b_base64(handshake),
-                         binascii.a2b_base64(ratchet))
+             creation_option = raw_input("Do you have the other party's "
+                                         "ratchet AND handshake keys, or a "
+                                         "masterkey exchanged by some "
+                                         "out-of-band method? H/m ")
+             if creation_option == 'm':
+                 mkey = getpass('What is the masterkey? ')
+                 print "If you are the first one creating a database, you " + \
+                       "should use mode Bob because Alice needs Bob's " + \
+                       "ratchet key to create hers. If the other party " + \
+                       "sent you their ratchet key, your mode should be Alice."
+                 state_mode = raw_input('Will your mode be Alice or Bob? a/B ')
+                 if state_mode == 'a':
+                     rkey = raw_input('What is the ratchet key for the other '
+                                      'party? ')
+                     newaxo.createState(other_name=OTHER_NICK,
+                                        mkey=hashlib.sha256(mkey).digest(),
+                                        mode=True,
+                                        other_ratchetKey=a2b_base64(rkey))
+                 else:
+                     newaxo.createState(other_name=OTHER_NICK,
+                                        mkey=hashlib.sha256(mkey).digest(),
+                                        mode=False)
+                     print 'Do not forget to send your ratchet key (shown ' + \
+                           'above) to the other party.'
+                     print 'Make sure the other party generates their ' + \
+                           'database as Alice.'
+             else:
+                 identity = raw_input('What is the identity key for the other '
+                                      'party? ')
+                 ratchet = raw_input('What is the ratchet key for the other '
+                                     'party? ')
+                 handshake = raw_input('What is the handshake key for the '
+                                       'other party? ')
+                 newaxo.initState(OTHER_NICK, binascii.a2b_base64(identity),
+                                  binascii.a2b_base64(handshake),
+                                  binascii.a2b_base64(ratchet))
              newaxo.saveState()
              print 'The database for ' + NICK + ' -> ' + OTHER_NICK + ' has been saved.'
          else:
