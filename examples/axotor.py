@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import binascii
+import hashlib
 import socket
 import threading
 import sys
@@ -8,11 +9,12 @@ import os
 import curses
 import socks
 import stem.process
+from binascii import a2b_base64
+from getpass import getpass
 from smp import SMP
 from stem.control import Controller
 from stem.util import term
 from curses.textpad import Textbox
-from random import randint
 from contextlib import contextmanager
 from pyaxo import Axolotl
 from time import sleep
@@ -56,10 +58,6 @@ Usage:
      axotor.py -c
 
 4. .quit at the chat prompt will quit (don't forget the "dot")
-
-Be sure to edit the getPasswd() method to return your password. You can
-hard code it or get it from e.g. a keyring. It just has to match the password
-you used when creating the database.
 
 Axochat requires the Axolotl module at https://github.com/rxcomm/pyaxo
 
@@ -258,9 +256,6 @@ def chatThread(sock, smp_match):
         a.saveState()
         closeWindows(stdscr)
 
-def getPasswd(nick):
-    return '1'
-
 def tor(port, controlport, tor_dir):
     tor_process = stem.process.launch_tor_with_config(
         tor_cmd = 'tor',
@@ -359,7 +354,7 @@ if __name__ == '__main__':
 
     if mode == '-s':
         axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db',
-            dbpassphrase=getPasswd(NICK))
+            dbpassphrase=getpass('Enter the database passphrase: '))
         tor_process = tor(TOR_SERVER_PORT, TOR_SERVER_CONTROL_PORT, 'tor.server')
         hs = hiddenService()
         print 'Waiting for ' + OTHER_NICK + ' to connect...'
@@ -369,9 +364,9 @@ if __name__ == '__main__':
             conn, addr = s.accept()
             print 'Connected...'
             print 'Performing per-session SMP authentication...'
-            ans = raw_input('Enter SMP secret: ')
+            ans = getpass('Enter SMP secret: ')
             print 'Running SMP protocol...'
-            secret = a.state['DHIs'] + ans + a.state['DHIr'] + a.state['CONVid']
+            secret = ans + a.state['CONVid']
             smp_match = smptest(secret, conn, True)
             if not smp_match:
                 ans = raw_input('Continue? (y/N) ')
@@ -383,7 +378,7 @@ if __name__ == '__main__':
 
     elif mode == '-c':
         axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db',
-            dbpassphrase=getPasswd(NICK))
+            dbpassphrase=getpass('Enter the database passphrase: '))
         tor_process = tor(TOR_CLIENT_PORT, TOR_CLIENT_CONTROL_PORT, 'tor.client')
         HOST = raw_input('Enter the onion server: ')
         print 'Connecting to ' + HOST + '...'
@@ -391,9 +386,9 @@ if __name__ == '__main__':
             s.connect((HOST, PORT))
             print 'Connected...'
             print 'Performing per-session SMP authentication...'
-            ans = raw_input('Enter SMP secret: ')
+            ans = getpass('Enter SMP secret: ')
             print 'Running SMP protocol...'
-            secret = a.state['DHIr'] + ans + a.state['DHIs'] + a.state['CONVid']
+            secret = ans + a.state['CONVid']
             smp_match = smptest(secret, s, False)
             if not smp_match:
                 ans = raw_input('Continue? (y/N) ')
@@ -409,12 +404,42 @@ if __name__ == '__main__':
 
          ans = raw_input('Do you want to create a new Axolotl database? y/N ')
          if ans == 'y':
-             identity = raw_input('What is the identity key for the other party? ')
-             ratchet = raw_input('What is the ratchet key for the other party? ')
-             handshake = raw_input('What is the handshake key for the other party? ')
-             newaxo.initState(OTHER_NICK, binascii.a2b_base64(identity),
-                              binascii.a2b_base64(handshake),
-                         binascii.a2b_base64(ratchet))
+             creation_option = raw_input("Do you have the other party's "
+                                         "ratchet AND handshake keys, or a "
+                                         "masterkey exchanged by some "
+                                         "out-of-band method? H/m ")
+             if creation_option == 'm':
+                 mkey = getpass('What is the masterkey? ')
+                 print "If you are the first one creating a database, you " + \
+                       "should use mode Bob because Alice needs Bob's " + \
+                       "ratchet key to create hers. If the other party " + \
+                       "sent you their ratchet key, your mode should be Alice."
+                 state_mode = raw_input('Will your mode be Alice or Bob? a/B ')
+                 if state_mode == 'a':
+                     rkey = raw_input('What is the ratchet key for the other '
+                                      'party? ')
+                     newaxo.createState(other_name=OTHER_NICK,
+                                        mkey=hashlib.sha256(mkey).digest(),
+                                        mode=True,
+                                        other_ratchetKey=a2b_base64(rkey))
+                 else:
+                     newaxo.createState(other_name=OTHER_NICK,
+                                        mkey=hashlib.sha256(mkey).digest(),
+                                        mode=False)
+                     print 'Do not forget to send your ratchet key (shown ' + \
+                           'above) to the other party.'
+                     print 'Make sure the other party generates their ' + \
+                           'database as Alice.'
+             else:
+                 identity = raw_input('What is the identity key for the other '
+                                      'party? ')
+                 ratchet = raw_input('What is the ratchet key for the other '
+                                     'party? ')
+                 handshake = raw_input('What is the handshake key for the '
+                                       'other party? ')
+                 newaxo.initState(OTHER_NICK, binascii.a2b_base64(identity),
+                                  binascii.a2b_base64(handshake),
+                                  binascii.a2b_base64(ratchet))
              newaxo.saveState()
              print 'The database for ' + NICK + ' -> ' + OTHER_NICK + ' has been saved.'
          else:
