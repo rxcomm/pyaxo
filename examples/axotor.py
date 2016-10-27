@@ -298,6 +298,44 @@ def hiddenService():
         print e
     return controller
 
+def ephemeralHiddenService():
+    PORT = 50000
+    HOST = '127.0.0.1'
+    hidden_svc_dir = 'tor.hs/'
+
+    print ' * Getting controller'
+    controller = Controller.from_port(address='127.0.0.1', port=TOR_SERVER_CONTROL_PORT)
+    controller.authenticate(password=TOR_CONTROL_PASSWORD),
+    try:
+        if not os.path.isfile('.hs_key'):
+            auth_key = None
+            hs = controller.create_ephemeral_hidden_service(PORT, basic_auth={'axotor': None})
+            ans = raw_input('Persist HS key? [y/N] ')
+            if ans == 'y':
+                with open('.hs_key', 'w') as f:
+                    f.write('%s:%s' % (hs.private_key_type, hs.private_key))
+                ans = raw_input('Persist Auth key? [y/N] ')
+                if ans == 'y':
+                    with open('.auth_key', 'w') as f:
+                        f.write(hs.client_auth['axotor'])
+        else:
+            with open('.hs_key', 'r') as f:
+                key_type, key_content = f.read().split(':', 1)
+            if os.path.isfile('.auth_key'):
+                with open('.auth_key', 'r') as f:
+                    auth_key = f.read()
+            else:
+                auth_key = None
+            hs = controller.create_ephemeral_hidden_service(PORT, key_type=key_type, key_content=key_content, basic_auth={'axotor': auth_key})
+        print 'Onion server: ' + hs.service_id + '.onion'
+        if auth_key:
+            print 'Persistent descriptor cookie: ' + auth_key
+        else:
+            print 'Ephemeral descriptor cookie: ' + hs.client_auth['axotor']
+    except Exception as e:
+        print e
+    return controller
+
 def smptest(secret, sock, is_server):
     # Create an SMP object with the calculated secret
     smp = SMP(secret)
@@ -358,7 +396,8 @@ if __name__ == '__main__':
         axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db',
             dbpassphrase=getpass('Enter the database passphrase: '))
         tor_process = tor(TOR_SERVER_PORT, TOR_SERVER_CONTROL_PORT, 'tor.server', '')
-        hs = hiddenService()
+        #hs = hiddenService()
+        hs = ephemeralHiddenService()
         print 'Waiting for ' + OTHER_NICK + ' to connect...'
         with socketcontext(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind((HOST, PORT))
@@ -382,15 +421,23 @@ if __name__ == '__main__':
         axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db',
             dbpassphrase=getpass('Enter the database passphrase: '))
         try:
-            with open('.descriptor_cookie', 'r') as f:
+            with open('.onion_data', 'r') as f:
                 HOST = f.readline().strip()
                 KEY = f.readline().strip()
+                if len(KEY) != 22:
+                    KEY = getpass('Enter the descriptor cookie: ')
         except IOError:
             HOST = raw_input('Enter the onion server: ')
             KEY = getpass('Enter the descriptor cookie: ')
-            with open('.descriptor_cookie', 'w') as f:
-                f.write(HOST+'\n'+KEY+'\n')
-            os.chmod('.descriptor_cookie', 0600)
+            ans = raw_input('Persist onion? [y/N] ')
+            if ans == 'y':
+                with open('.onion_data', 'w') as f:
+                    f.write(HOST+'\n')
+                ans = raw_input('Persist descriptor cookie? [y/N] ')
+                if ans == 'y':
+                    with open('.onion_data', 'a') as f:
+                        f.write(KEY+'\n')
+            os.chmod('.onion_data', 0600)
         tor_process = tor(TOR_CLIENT_PORT, TOR_CLIENT_CONTROL_PORT, 'tor.client', HOST+' '+KEY)
         print 'Connecting to ' + HOST + '...'
         with torcontext() as s:
