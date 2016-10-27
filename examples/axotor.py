@@ -301,7 +301,6 @@ def hiddenService():
 def ephemeralHiddenService():
     PORT = 50000
     HOST = '127.0.0.1'
-    hidden_svc_dir = 'tor.hs/'
 
     print ' * Getting controller'
     controller = Controller.from_port(address='127.0.0.1', port=TOR_SERVER_CONTROL_PORT)
