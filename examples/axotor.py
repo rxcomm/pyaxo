@@ -256,7 +256,7 @@ def chatThread(sock, smp_match):
         a.saveState()
         closeWindows(stdscr)
 
-def tor(port, controlport, tor_dir):
+def tor(port, controlport, tor_dir, descriptor_cookie):
     tor_process = stem.process.launch_tor_with_config(
         tor_cmd = 'tor',
         config = {
@@ -265,6 +265,7 @@ def tor(port, controlport, tor_dir):
                   'Log'        : [ 'NOTICE stdout', 'ERR file /tmp/tor_error_log', ],
                   'DataDirectory' : tor_dir,
                   'HashedControlPassword' : TOR_CONTROL_HASHED_PASSWORD,
+                  'HidServAuth': descriptor_cookie,
                  },
         completion_percent = 100,
         take_ownership = True,
@@ -289,6 +290,7 @@ def hiddenService():
         controller.set_options([
             ('HiddenServiceDir', hidden_svc_dir),
             ('HiddenServicePort', '50000 %s:%s' % (HOST, str(PORT))),
+            ('HiddenServiceAuthorizeClient', 'stealth axotor'),
             ])
         svc_name = open(hidden_svc_dir + 'hostname', 'r').read().strip()
         print ' * Created onion server: %s' % svc_name
@@ -355,7 +357,7 @@ if __name__ == '__main__':
     if mode == '-s':
         axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db',
             dbpassphrase=getpass('Enter the database passphrase: '))
-        tor_process = tor(TOR_SERVER_PORT, TOR_SERVER_CONTROL_PORT, 'tor.server')
+        tor_process = tor(TOR_SERVER_PORT, TOR_SERVER_CONTROL_PORT, 'tor.server', '')
         hs = hiddenService()
         print 'Waiting for ' + OTHER_NICK + ' to connect...'
         with socketcontext(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -379,8 +381,17 @@ if __name__ == '__main__':
     elif mode == '-c':
         axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db',
             dbpassphrase=getpass('Enter the database passphrase: '))
-        tor_process = tor(TOR_CLIENT_PORT, TOR_CLIENT_CONTROL_PORT, 'tor.client')
-        HOST = raw_input('Enter the onion server: ')
+        try:
+            with open('.descriptor_cookie', 'r') as f:
+                HOST = f.readline().strip()
+                KEY = f.readline().strip()
+        except IOError:
+            HOST = raw_input('Enter the onion server: ')
+            KEY = getpass('Enter the descriptor cookie: ')
+            with open('.descriptor_cookie', 'w') as f:
+                f.write(HOST+'\n'+KEY+'\n')
+            os.chmod('.descriptor_cookie', 0600)
+        tor_process = tor(TOR_CLIENT_PORT, TOR_CLIENT_CONTROL_PORT, 'tor.client', HOST+' '+KEY)
         print 'Connecting to ' + HOST + '...'
         with torcontext() as s:
             s.connect((HOST, PORT))
