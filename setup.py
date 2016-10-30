@@ -3,13 +3,16 @@ try:
 except ImportError:
     from distutils.core import setup
 
+import versioneer
 from glob import glob
+
 
 BASE_DIRECTORY = '/usr/share/pyaxo'
 
 setup(
     name='pyaxo',
-    version='0.4.6',
+    version=versioneer.get_version(),
+    cmdclass=versioneer.get_cmdclass(),
     description='Python implementation of the Axolotl ratchet protocol',
     author='David R. Andersen',
     author_email='k0rx@RXcomm.net',
