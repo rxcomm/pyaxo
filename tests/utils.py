@@ -3,7 +3,9 @@ import os
 
 
 DEFAULT_DB = './axolotl.db'
+
 PLAINTEXT = 'message {}'
+
 EXCHANGE_IDS = list()
 EXCHANGES = list()
 
