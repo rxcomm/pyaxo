@@ -2,12 +2,13 @@ import errno
 import os
 
 
+DEFAULT_DB = './axolotl.db'
 PLAINTEXT = 'message {}'
 EXCHANGE_IDS = list()
 EXCHANGES = list()
 
 
-def remove_db(file_path='./axolotl.db'):
+def remove_db(file_path=DEFAULT_DB):
     try:
         os.remove(file_path)
     except OSError as e:
