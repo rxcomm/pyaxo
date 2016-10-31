@@ -1,6 +1,18 @@
+import errno
+import os
+
+
 PLAINTEXT = 'message {}'
 EXCHANGE_IDS = list()
 EXCHANGES = list()
+
+
+def remove_db(file_path='./axolotl.db'):
+    try:
+        os.remove(file_path)
+    except OSError as e:
+        if e.errno != errno.ENOENT:
+            raise
 
 
 def encrypt(axolotl, i, pt, ct):
