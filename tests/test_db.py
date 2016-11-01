@@ -1,8 +1,13 @@
+import sqlite3
+
 import pytest
 
 from pyaxo import Axolotl
 
 from . import utils
+
+
+PASSPHRASES = [None, '123', '321']
 
 
 class TestDefaultDatabase:
@@ -47,6 +52,26 @@ class TestDefaultDatabase:
 
         # Harry decrypts the ciphertext
         assert harry.decrypt(ciphertext) == msg
+
+    @pytest.mark.parametrize('passphrase_1', PASSPHRASES)
+    @pytest.mark.parametrize('passphrase_0', PASSPHRASES)
+    def test_passphrase(self, passphrase_0, passphrase_1):
+        a = Axolotl('Angie', dbpassphrase=passphrase_0)
+        b = Axolotl('Barb', dbpassphrase=None)
+
+        a.initState(other_name=b.name,
+                    other_identityKey=b.state['DHIs'],
+                    other_handshakeKey=b.handshakePKey,
+                    other_ratchetKey=b.state['DHRs'],
+                    verify=False)
+        a.saveState()
+
+        if passphrase_0 == passphrase_1:
+            a = Axolotl('Angie', dbpassphrase=passphrase_1)
+            assert isinstance(a.db, sqlite3.Connection)
+        else:
+            with pytest.raises(SystemExit):
+                a = Axolotl('Angie', dbpassphrase=passphrase_1)
 
 
 class TestIndividualDatabases:
