@@ -29,6 +29,8 @@ import hmac
 import gnupg
 import os
 import sys
+from binascii import a2b_base64 as a2b
+from binascii import b2a_base64 as b2a
 from getpass import getpass
 from time import time
 from passlib.utils.pbkdf2 import pbkdf2
@@ -290,8 +292,8 @@ class Axolotl:
                 ) VALUES (?, ?, ?, ?, ?)', \
                 ( self.state['name'], \
                   self.state['other_name'], \
-                  binascii.b2a_base64(HKr).strip(), \
-                  binascii.b2a_base64(mk).strip(), \
+                  b2a(HKr).strip(), \
+                  b2a(mk).strip(), \
                   timestamp \
                 ))
             rowtime = timestamp - self.storeTime
@@ -306,8 +308,8 @@ class Axolotl:
                 if name == row[0] and other_name == row[1]:
                     msg1 = msg[:106 - pad_length]
                     msg2 = msg[106:]
-                    header = self.dec(binascii.a2b_base64(row[2]), msg1)
-                    body = self.dec(binascii.a2b_base64(row[3]), msg2)
+                    header = self.dec(a2b(row[2]), msg1)
+                    body = self.dec(a2b(row[3]), msg2)
                     if header != '' and body != '':
                         cur.execute('DELETE FROM skipped_mk WHERE mk = ?', (row[3],))
                         return body
@@ -381,7 +383,7 @@ class Axolotl:
     def encrypt_file(self, filename):
         with open(filename, 'r') as f:
             plaintext = f.read()
-        ciphertext = binascii.b2a_base64(self.encrypt(plaintext))
+        ciphertext = b2a(self.encrypt(plaintext))
         with open(filename+'.asc', 'w') as f:
             lines = [ciphertext[i:i+64] for i in xrange(0, len(ciphertext), 64)]
             for line in lines:
@@ -389,45 +391,45 @@ class Axolotl:
 
     def decrypt_file(self, filename):
         with open(filename, 'r') as f:
-            ciphertext = binascii.a2b_base64(f.read())
+            ciphertext = a2b(f.read())
         plaintext = self.decrypt(ciphertext)
         print plaintext
 
     def encrypt_pipe(self):
         plaintext = sys.stdin.read()
-        ciphertext = binascii.b2a_base64(self.encrypt(plaintext))
+        ciphertext = b2a(self.encrypt(plaintext))
         sys.stdout.write(ciphertext)
         sys.stdout.flush()
 
     def decrypt_pipe(self):
-        ciphertext = binascii.a2b_base64(sys.stdin.read())
+        ciphertext = a2b(sys.stdin.read())
         plaintext = self.decrypt(ciphertext)
         sys.stdout.write(plaintext)
         sys.stdout.flush()
 
     def printKeys(self):
-        print 'Your Identity key is:\n' + binascii.b2a_base64(self.state['DHIs'])
+        print 'Your Identity key is:\n' + b2a(self.state['DHIs'])
         fingerprint = hashlib.sha224(self.state['DHIs']).hexdigest().upper()
         fprint = ''
         for i in range(0, len(fingerprint), 4):
             fprint += fingerprint[i:i+2] + ':'
         print 'Your identity key fingerprint is: '
         print fprint[:-1] + '\n'
-        print 'Your Ratchet key is:\n' + binascii.b2a_base64(self.state['DHRs'])
+        print 'Your Ratchet key is:\n' + b2a(self.state['DHRs'])
         if self.handshakeKey:
-            print 'Your Handshake key is:\n' + binascii.b2a_base64(self.handshakePKey)
+            print 'Your Handshake key is:\n' + b2a(self.handshakePKey)
         else:
             print 'Your Handshake key is not available'
 
     def saveState(self):
-        HKs = 0 if self.state['HKs'] is None else binascii.b2a_base64(self.state['HKs']).strip()
-        HKr = 0 if self.state['HKr'] is None else binascii.b2a_base64(self.state['HKr']).strip()
-        CKs = 0 if self.state['CKs'] is None else binascii.b2a_base64(self.state['CKs']).strip()
-        CKr = 0 if self.state['CKr'] is None else binascii.b2a_base64(self.state['CKr']).strip()
-        DHIr = 0 if self.state['DHIr'] is None else binascii.b2a_base64(self.state['DHIr']).strip()
-        DHRs_priv = 0 if self.state['DHRs_priv'] is None else binascii.b2a_base64(self.state['DHRs_priv']).strip()
-        DHRs = 0 if self.state['DHRs'] is None else binascii.b2a_base64(self.state['DHRs']).strip()
-        DHRr = 0 if self.state['DHRr'] is None else binascii.b2a_base64(self.state['DHRr']).strip()
+        HKs = 0 if self.state['HKs'] is None else b2a(self.state['HKs']).strip()
+        HKr = 0 if self.state['HKr'] is None else b2a(self.state['HKr']).strip()
+        CKs = 0 if self.state['CKs'] is None else b2a(self.state['CKs']).strip()
+        CKr = 0 if self.state['CKr'] is None else b2a(self.state['CKr']).strip()
+        DHIr = 0 if self.state['DHIr'] is None else b2a(self.state['DHIr']).strip()
+        DHRs_priv = 0 if self.state['DHRs_priv'] is None else b2a(self.state['DHRs_priv']).strip()
+        DHRs = 0 if self.state['DHRs'] is None else b2a(self.state['DHRs']).strip()
+        DHRr = 0 if self.state['DHRr'] is None else b2a(self.state['DHRr']).strip()
         ratchet_flag = 1 if self.state['ratchet_flag'] else 0
         mode = 1 if self.mode else 0
         with self.db:
@@ -457,20 +459,20 @@ class Axolotl:
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', \
             ( self.state['name'], \
               self.state['other_name'], \
-              binascii.b2a_base64(self.state['RK']).strip(), \
+              b2a(self.state['RK']).strip(), \
               HKs, \
               HKr, \
-              binascii.b2a_base64(self.state['NHKs']).strip(), \
-              binascii.b2a_base64(self.state['NHKr']).strip(), \
+              b2a(self.state['NHKs']).strip(), \
+              b2a(self.state['NHKr']).strip(), \
               CKs, \
               CKr, \
-              binascii.b2a_base64(self.state['DHIs_priv']).strip(), \
-              binascii.b2a_base64(self.state['DHIs']).strip(), \
+              b2a(self.state['DHIs_priv']).strip(), \
+              b2a(self.state['DHIs']).strip(), \
               DHIr, \
               DHRs_priv, \
               DHRs, \
               DHRr, \
-              binascii.b2a_base64(self.state['CONVid']).strip(), \
+              b2a(self.state['CONVid']).strip(), \
               self.state['Ns'], \
               self.state['Nr'], \
               self.state['PNs'], \
@@ -494,25 +496,25 @@ class Axolotl:
                     self.state = \
                            { 'name': row[0],
                              'other_name': row[1],
-                             'RK': binascii.a2b_base64(row[2]),
-                             'NHKs': binascii.a2b_base64(row[5]),
-                             'NHKr': binascii.a2b_base64(row[6]),
-                             'DHIs_priv': binascii.a2b_base64(row[9]),
-                             'DHIs': binascii.a2b_base64(row[10]),
-                             'CONVid': binascii.a2b_base64(row[15]),
+                             'RK': a2b(row[2]),
+                             'NHKs': a2b(row[5]),
+                             'NHKr': a2b(row[6]),
+                             'DHIs_priv': a2b(row[9]),
+                             'DHIs': a2b(row[10]),
+                             'CONVid': a2b(row[15]),
                              'Ns': row[16],
                              'Nr': row[17],
                              'PNs': row[18],
                            }
                     self.name = self.state['name']
-                    self.state['HKs'] = None if row[3] == '0' else binascii.a2b_base64(row[3])
-                    self.state['HKr'] = None if row[4] == '0' else binascii.a2b_base64(row[4])
-                    self.state['CKs'] = None if row[7] == '0' else binascii.a2b_base64(row[7])
-                    self.state['CKr'] = None if row[8] == '0' else binascii.a2b_base64(row[8])
-                    self.state['DHIr'] = None if row[11] == '0' else binascii.a2b_base64(row[11])
-                    self.state['DHRs_priv'] = None if row[12] == '0' else binascii.a2b_base64(row[12])
-                    self.state['DHRs'] = None if row[13] == '0' else binascii.a2b_base64(row[13])
-                    self.state['DHRr'] = None if row[14] == '0' else binascii.a2b_base64(row[14])
+                    self.state['HKs'] = None if row[3] == '0' else a2b(row[3])
+                    self.state['HKr'] = None if row[4] == '0' else a2b(row[4])
+                    self.state['CKs'] = None if row[7] == '0' else a2b(row[7])
+                    self.state['CKr'] = None if row[8] == '0' else a2b(row[8])
+                    self.state['DHIr'] = None if row[11] == '0' else a2b(row[11])
+                    self.state['DHRs_priv'] = None if row[12] == '0' else a2b(row[12])
+                    self.state['DHRs'] = None if row[13] == '0' else a2b(row[13])
+                    self.state['DHRr'] = None if row[14] == '0' else a2b(row[14])
                     ratchet_flag = row[19]
                     self.state['ratchet_flag'] = True if ratchet_flag == 1 \
                                                        else False
@@ -576,7 +578,7 @@ class Axolotl:
                          self.state[key].decode('ascii')
                          print key + ': ' + self.state[key]
                      except UnicodeDecodeError:
-                         print key + ': ' + binascii.b2a_base64(self.state[key]).strip()
+                         print key + ': ' + b2a(self.state[key]).strip()
                  else:
                      print key + ': ' + str(self.state[key])
         if self.mode:
