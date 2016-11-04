@@ -86,9 +86,9 @@ class Axolotl:
         self.mode = None
         self.staged_HK_mk = {}
         self.state = {}
-        self.state['DHIs_priv'], self.state['DHIs'] = self.genKey()
-        self.state['DHRs_priv'], self.state['DHRs'] = self.genKey()
-        self.handshakeKey, self.handshakePKey = self.genKey()
+        self.state['DHIs_priv'], self.state['DHIs'] = generate_keypair()
+        self.state['DHRs_priv'], self.state['DHRs'] = generate_keypair()
+        self.handshakeKey, self.handshakePKey = generate_keypair()
         self.storeTime = 2*86400 # minimum time (seconds) to store missed ephemeral message keys
         with self.db:
             cur = self.db.cursor()
@@ -131,20 +131,13 @@ class Axolotl:
     def tripleDH(self, a, a0, B, B0):
         if self.mode == None:
             sys.exit(1)
-        if self.mode:
-            return hashlib.sha256(self.genDH(a, B0) + self.genDH(a0, B) + self.genDH(a0, B0)).digest()
-        else:
-            return hashlib.sha256(self.genDH(a0, B) + self.genDH(a, B0) + self.genDH(a0, B0)).digest()
+        return generate_3dh(a, a0, B, B0, self.mode)
 
     def genDH(self, a, B):
-        key = keys.Private(secret=a)
-        return key.get_shared_key(keys.Public(B))
+        return generate_dh(a, B)
 
     def genKey(self):
-        key = keys.Private()
-        privkey = key.private
-        pubkey = key.get_public().serialize()
-        return privkey, pubkey
+        return generate_keypair()
 
     def initState(self, other_name, other_identityKey, other_handshakeKey,
                   other_ratchetKey, verify=True):
@@ -241,10 +234,10 @@ class Axolotl:
 
     def encrypt(self, plaintext):
         if self.state['ratchet_flag']:
-            self.state['DHRs_priv'], self.state['DHRs'] = self.genKey()
+            self.state['DHRs_priv'], self.state['DHRs'] = generate_keypair()
             self.state['HKs'] = self.state['NHKs']
             self.state['RK'] = hash_(self.state['RK'] +
-                                     self.genDH(self.state['DHRs_priv'], self.state['DHRr']))
+                                     generate_dh(self.state['DHRs_priv'], self.state['DHRr']))
             if self.mode:
                 self.state['NHKs'] = kdf(self.state['RK'], b'\x03')
                 self.state['CKs'] = kdf(self.state['RK'], b'\x05')
@@ -255,9 +248,12 @@ class Axolotl:
             self.state['Ns'] = 0
             self.state['ratchet_flag'] = False
         mk = hash_(self.state['CKs'] + '0')
-        msg1 = self.enc(self.state['HKs'], str(self.state['Ns']).zfill(3) +
-                        str(self.state['PNs']).zfill(3) + self.state['DHRs'])
-        msg2 = self.enc(mk, plaintext)
+        msg1 = encrypt_symmetric(
+            self.state['HKs'],
+            str(self.state['Ns']).zfill(3) +
+            str(self.state['PNs']).zfill(3) +
+            self.state['DHRs'])
+        msg2 = encrypt_symmetric(mk, plaintext)
         pad_length = 106 - len(msg1)
         pad = os.urandom(pad_length - 1) + chr(pad_length)
         msg = msg1 + pad + msg2
@@ -267,16 +263,10 @@ class Axolotl:
 
 
     def enc(self, key, plaintext):
-        key = binascii.hexlify(key)
-        msg = gpg.encrypt(plaintext, recipients=None, symmetric=GPG_CIPHER, armor=False,
-                                always_trust=True, passphrase=key)
-        return msg.data[6:]
+        return encrypt_symmetric(key, plaintext)
 
     def dec(self, key, encrypted):
-        key = binascii.hexlify(key)
-        msg = gpg.decrypt(GPG_HEADER + encrypted,
-                          passphrase=key, always_trust=True)
-        return msg.data
+        return decrypt_symmetric(key, encrypted)
 
     def commitSkippedMK(self):
         timestamp = int(time())
@@ -308,8 +298,8 @@ class Axolotl:
                 if name == row[0] and other_name == row[1]:
                     msg1 = msg[:106 - pad_length]
                     msg2 = msg[106:]
-                    header = self.dec(a2b(row[2]), msg1)
-                    body = self.dec(a2b(row[3]), msg2)
+                    header = decrypt_symmetric(a2b(row[2]), msg1)
+                    body = decrypt_symmetric(a2b(row[3]), msg2)
                     if header != '' and body != '':
                         cur.execute('DELETE FROM skipped_mk WHERE mk = ?', (row[3],))
                         return body
@@ -337,16 +327,16 @@ class Axolotl:
 
         header = None
         if self.state['HKr']:
-            header = self.dec(self.state['HKr'], msg1)
+            header = decrypt_symmetric(self.state['HKr'], msg1)
         if header and header != '':
             Np = int(header[:3])
             CKp, mk = self.stageSkippedMK(self.state['HKr'], self.state['Nr'], Np, self.state['CKr'])
-            body = self.dec(mk, msg[106:])
+            body = decrypt_symmetric(mk, msg[106:])
             if not body or body == '':
                 print 'Undecipherable message'
                 sys.exit(1)
         else:
-            header = self.dec(self.state['NHKr'], msg1)
+            header = decrypt_symmetric(self.state['NHKr'], msg1)
             if self.state['ratchet_flag'] or not header or header == '':
                 print 'Undecipherable message'
                 sys.exit(1)
@@ -356,7 +346,7 @@ class Axolotl:
             if self.state['CKr']:
                 self.stageSkippedMK(self.state['HKr'], self.state['Nr'], PNp, self.state['CKr'])
             HKp = self.state['NHKr']
-            RKp = hash_(self.state['RK'] + self.genDH(self.state['DHRs_priv'], DHRp))
+            RKp = hash_(self.state['RK'] + generate_dh(self.state['DHRs_priv'], DHRp))
             if self.mode:
                 NHKp = kdf(RKp, b'\x04')
                 CKp = kdf(RKp, b'\x06')
@@ -364,7 +354,7 @@ class Axolotl:
                 NHKp = kdf(RKp, b'\x03')
                 CKp = kdf(RKp, b'\x05')
             CKp, mk = self.stageSkippedMK(HKp, 0, Np, CKp)
-            body = self.dec(mk, msg[106:])
+            body = decrypt_symmetric(mk, msg[106:])
             if not body or body == '':
                 print 'Undecipherable message'
                 sys.exit(1)
@@ -593,3 +583,40 @@ def hash_(data):
 
 def kdf(secret, salt):
     return pbkdf2(secret, salt, rounds=10, prf='hmac-sha256')
+
+
+def generate_keypair():
+    key = keys.Private()
+    privkey = key.serialize()
+    pubkey = key.get_public().serialize()
+    return privkey, pubkey
+
+
+def generate_dh(a, b):
+    key = keys.Private(secret=a)
+    return key.get_shared_key(keys.Public(b))
+
+
+def generate_3dh(a, a0, b, b0, mode=True):
+    if mode:
+        return hash_(generate_dh(a, b0) +
+                     generate_dh(a0, b) +
+                     generate_dh(a0, b0))
+    else:
+        return hash_(generate_dh(a0, b) +
+                     generate_dh(a, b0) +
+                     generate_dh(a0, b0))
+
+
+def encrypt_symmetric(key, plaintext):
+    key = binascii.hexlify(key)
+    msg = gpg.encrypt(plaintext, recipients=None, symmetric=GPG_CIPHER,
+                      armor=False, always_trust=True, passphrase=key)
+    return msg.data[6:]
+
+
+def decrypt_symmetric(key, ciphertext):
+    key = binascii.hexlify(key)
+    msg = gpg.decrypt(GPG_HEADER + ciphertext, passphrase=key,
+                      always_trust=True)
+    return msg.data
