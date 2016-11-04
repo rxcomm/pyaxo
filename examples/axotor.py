@@ -191,7 +191,7 @@ def usage():
     print 'Usage: ' + sys.argv[0] + ' -(s,c)'
     print ' -s: start a chat in server mode'
     print ' -c: start a chat in client mode'
-    exit()
+    sys.exit()
 
 def receiveThread(sock, stdscr, input_win, output_win, text_color):
     global screen_needs_update, a
@@ -201,7 +201,8 @@ def receiveThread(sock, stdscr, input_win, output_win, text_color):
             rcv = sock.recv(1024)
             if not rcv:
                 input_win.move(0, 0)
-                input_win.addstr('Disconnected - Ctrl-C to exit!', text_color)
+                input_win.addstr('Disconnected - Ctrl-C to exit!',
+                                 text_color)
                 input_win.refresh()
                 sys.exit()
             data = data + rcv
@@ -235,8 +236,9 @@ def chatThread(sock, smp_match):
     input_win.addstr(0, 0, NICK + ':> ')
     textpad = _Textbox(input_win, insert_mode=True)
     textpad.stripspaces = True
-    t = threading.Thread(target=receiveThread, args=(sock, stdscr, input_win,
-                         output_win, text_color))
+    t = threading.Thread(target=receiveThread,
+                         args=(sock, stdscr, input_win,
+                               output_win, text_color))
     t.daemon = True
     t.start()
     try:
@@ -294,7 +296,8 @@ def hiddenService():
     HOST = '127.0.0.1'
     hidden_svc_dir = 'tor.hs/'
 
-    controller = Controller.from_port(address='127.0.0.1', port=TOR_SERVER_CONTROL_PORT)
+    controller = Controller.from_port(address='127.0.0.1',
+                                      port=TOR_SERVER_CONTROL_PORT)
     try:
         controller.authenticate(password=TOR_CONTROL_PASSWORD),
         controller.set_options([
@@ -307,7 +310,8 @@ def hiddenService():
     return controller
 
 def clientController(descriptor_cookie, onion):
-    controller = Controller.from_port(address='127.0.0.1', port=TOR_CLIENT_CONTROL_PORT)
+    controller = Controller.from_port(address='127.0.0.1',
+                                      port=TOR_CLIENT_CONTROL_PORT)
     try:
         controller.authenticate(password=TOR_CONTROL_PASSWORD),
         controller.set_options([
@@ -323,17 +327,21 @@ def ephemeralHiddenService():
     print 'Waiting for Hidden Service descriptor to be published...'
     print ' (this may take some time)'
 
-    controller = Controller.from_port(address='127.0.0.1', port=TOR_SERVER_CONTROL_PORT)
-    controller.authenticate(password=TOR_CONTROL_PASSWORD),
+    controller = Controller.from_port(address='127.0.0.1',
+                                      port=TOR_SERVER_CONTROL_PORT)
+    controller.authenticate(password=TOR_CONTROL_PASSWORD)
     try:
-        hs = controller.create_ephemeral_hidden_service(PORT, basic_auth={'axotor': None},
+        hs = controller.create_ephemeral_hidden_service(PORT,
+                                                        basic_auth={'axotor': None},
                                                         await_publication=True)
     except Exception as e:
         print e
     return controller, hs.client_auth['axotor'], hs.service_id +'.onion'
 
 def credentialsSend(mkey, cookie, ratchet_key, onion):
-    w = wh.send(unicode(mkey), cookie+'___'+ratchet_key+'___'+onion, TOR_SERVER_PORT)
+    w = wh.send(unicode(mkey),
+                cookie+'___'+ratchet_key+'___'+onion,
+                TOR_SERVER_PORT)
     return w
 
 def credentialsReceive(mkey):
@@ -377,10 +385,38 @@ def smptest(secret, sock, is_server):
     # Check if the secrets match
     if smp.match:
         print 'Secrets Match!'
+        sleep(1)
         smp_match = True
     else:
         print 'Secrets DO NOT Match!'
         smp_match = False
+    return smp_match
+
+def doSMP(sock, is_server):
+    global a
+    ans = raw_input('Run SMP authentication step? (y/N)? ')
+    if not ans == 'y': ans = 'N'
+    sock.send(a.encrypt(ans))
+    data = sock.recv(171, socket.MSG_WAITALL)
+    data = a.decrypt(data)
+    if ans == 'N' and data == 'y':
+        print 'Other user requested SMP authentication'
+    if ans == 'y' or data == 'y':
+        print 'Performing per-session SMP authentication...'
+        ans = getpass('Enter SMP secret: ')
+        print 'Running SMP protocol...'
+        secret = ans + a.state['CONVid']
+        smp_match = smptest(secret, sock, is_server)
+        if not smp_match:
+            ans = raw_input('Continue? (y/N) ')
+            if ans != 'y':
+                print 'Exiting...'
+                sys.exit()
+    else:
+        print 'OK - skipping SMP step and assuming ' + \
+               OTHER_NICK + ' is already authenticated...'
+        smp_match = True
+        sleep(2)
     return smp_match
 
 if __name__ == '__main__':
@@ -396,41 +432,47 @@ if __name__ == '__main__':
     screen_needs_update = False
     HOST = '127.0.0.1'
     PORT=50000
-    mkey = getpass('What is the masterkey? ')
+    mkey = getpass('What is the masterkey (format: NNN-xxxx)? ')
 
     if mode == '-s':
-        a = Axolotl(NICK, dbname=OTHER_NICK+'.db', dbpassphrase=None, nonthreaded_sql=False)
+        a = Axolotl(NICK,
+                    dbname=OTHER_NICK+'.db',
+                    dbpassphrase=None,
+                    nonthreaded_sql=False)
         a.createState(other_name=OTHER_NICK,
                            mkey=hashlib.sha256(mkey).digest(),
                            mode=False)
-        tor_process = tor(TOR_SERVER_PORT, TOR_SERVER_CONTROL_PORT, '/tmp/tor.server', '')
+        tor_process = tor(TOR_SERVER_PORT,
+                          TOR_SERVER_CONTROL_PORT,
+                          '/tmp/tor.server',
+                          '')
         hs, cookie, onion = ephemeralHiddenService()
         print 'Exhanging credentials via tor...'
-        if credentialsSend(mkey, cookie, b2a_base64(a.state['DHRs']).strip(), onion):
+        if credentialsSend(mkey,
+                           cookie,
+                           b2a_base64(a.state['DHRs']).strip(),
+                           onion):
             pass
         else:
-            exit(1)
-        print 'Waiting for ' + OTHER_NICK + ' to connect...'
+            sys.exit(1)
+        print 'Credentials sent, waiting for ' + OTHER_NICK + ' to connect...'
         with socketcontext(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind((HOST, PORT))
             s.listen(1)
             conn, addr = s.accept()
             print 'Connected...'
-            print 'Performing per-session SMP authentication...'
-            ans = getpass('Enter SMP secret: ')
-            print 'Running SMP protocol...'
-            secret = ans + a.state['CONVid']
-            smp_match = smptest(secret, conn, True)
-            if not smp_match:
-                ans = raw_input('Continue? (y/N) ')
-                if ans != 'y':
-                    print 'Exiting...'
-                    sys.exit()
+            smp_match = doSMP(conn, True)
             chatThread(conn, smp_match)
 
     elif mode == '-c':
-        a = Axolotl(NICK, dbname=OTHER_NICK+'.db', dbpassphrase=None, nonthreaded_sql=False)
-        tor_process = tor(TOR_CLIENT_PORT, TOR_CLIENT_CONTROL_PORT, '/tmp/tor.client', '')
+        a = Axolotl(NICK,
+                    dbname=OTHER_NICK+'.db',
+                    dbpassphrase=None,
+                    nonthreaded_sql=False)
+        tor_process = tor(TOR_CLIENT_PORT,
+                          TOR_CLIENT_CONTROL_PORT,
+                          '/tmp/tor.client',
+                          '')
         print 'Exhanging credentials via tor...'
         creds = credentialsReceive(mkey)
         cookie, rkey, onion = creds.split('___')
@@ -440,20 +482,11 @@ if __name__ == '__main__':
                       mode=True,
                       other_ratchetKey=a2b_base64(rkey))
 
-        print 'Connecting...'
+        print 'Credentials received, connecting to ' + OTHER_NICK + '...'
         with torcontext() as s:
             s.connect((onion, PORT))
             print 'Connected...'
-            print 'Performing per-session SMP authentication...'
-            ans = getpass('Enter SMP secret: ')
-            print 'Running SMP protocol...'
-            secret = ans + a.state['CONVid']
-            smp_match = smptest(secret, s, False)
-            if not smp_match:
-                ans = raw_input('Continue? (y/N) ')
-                if ans != 'y':
-                    print 'Exiting...'
-                    sys.exit()
+            smp_match = doSMP(s, False)
             chatThread(s, smp_match)
 
     else:

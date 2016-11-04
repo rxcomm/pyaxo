@@ -22,7 +22,7 @@ def send(code, data, tor_port):
 
     tor = TorManager(reactor, tor_socks_port=tor_port)
     tor.start()
-    w1 = wormhole(u"unMessage", RENDEZVOUS_RELAY, reactor, tor_manager=tor)
+    w1 = wormhole(u"axotor", RENDEZVOUS_RELAY, reactor, tor_manager=tor)
     w1.set_code(code)
     w1.send(data+h.sha256(data).hexdigest())
     d = w1.get()
@@ -52,7 +52,7 @@ def receive(code, tor_port):
 
     tor = TorManager(reactor, tor_socks_port=tor_port)
     tor.start()
-    w1 = wormhole(u"unMessage", RENDEZVOUS_RELAY, reactor, tor_manager=tor)
+    w1 = wormhole(u"axotor", RENDEZVOUS_RELAY, reactor, tor_manager=tor)
     w1.set_code(code)
     d = w1.get()
     d.addCallback(_receive)
