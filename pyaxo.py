@@ -180,33 +180,33 @@ class Axolotl:
             if self.mode is None: # mode not selected
                 sys.exit(1)
         if self.mode: # alice mode
-            RK = pbkdf2(mkey, b'\x00', 10, prf='hmac-sha256')
+            RK = kdf(mkey, b'\x00')
             HKs = None
-            HKr = pbkdf2(mkey, b'\x02', 10, prf='hmac-sha256')
-            NHKs = pbkdf2(mkey, b'\x03', 10, prf='hmac-sha256')
-            NHKr = pbkdf2(mkey, b'\x04', 10, prf='hmac-sha256')
+            HKr = kdf(mkey, b'\x02')
+            NHKs = kdf(mkey, b'\x03')
+            NHKr = kdf(mkey, b'\x04')
             CKs = None
-            CKr = pbkdf2(mkey, b'\x06', 10, prf='hmac-sha256')
+            CKr = kdf(mkey, b'\x06')
             DHRs_priv = None
             DHRs = None
             DHRr = other_ratchetKey
-            CONVid = pbkdf2(mkey, b'\x07', 10, prf='hmac-sha256')
+            CONVid = kdf(mkey, b'\x07')
             Ns = 0
             Nr = 0
             PNs = 0
             ratchet_flag = True
         else: # bob mode
-            RK = pbkdf2(mkey, b'\x00', 10, prf='hmac-sha256')
-            HKs = pbkdf2(mkey, b'\x02', 10, prf='hmac-sha256')
+            RK = kdf(mkey, b'\x00')
+            HKs = kdf(mkey, b'\x02')
             HKr = None
-            NHKs = pbkdf2(mkey, b'\x04', 10, prf='hmac-sha256')
-            NHKr = pbkdf2(mkey, b'\x03', 10, prf='hmac-sha256')
-            CKs = pbkdf2(mkey, b'\x06', 10, prf='hmac-sha256')
+            NHKs = kdf(mkey, b'\x04')
+            NHKr = kdf(mkey, b'\x03')
+            CKs = kdf(mkey, b'\x06')
             CKr = None
             DHRs_priv = self.state['DHRs_priv']
             DHRs = self.state['DHRs']
             DHRr = None
-            CONVid = pbkdf2(mkey, b'\x07', 10, prf='hmac-sha256')
+            CONVid = kdf(mkey, b'\x07')
             Ns = 0
             Nr = 0
             PNs = 0
@@ -243,18 +243,18 @@ class Axolotl:
         if self.state['ratchet_flag']:
             self.state['DHRs_priv'], self.state['DHRs'] = self.genKey()
             self.state['HKs'] = self.state['NHKs']
-            self.state['RK'] = hashlib.sha256(self.state['RK'] +
-                                              self.genDH(self.state['DHRs_priv'], self.state['DHRr'])).digest()
+            self.state['RK'] = hash_(self.state['RK'] +
+                                     self.genDH(self.state['DHRs_priv'], self.state['DHRr']))
             if self.mode:
-                self.state['NHKs'] = pbkdf2(self.state['RK'], b'\x03', 10, prf='hmac-sha256')
-                self.state['CKs'] = pbkdf2(self.state['RK'], b'\x05', 10, prf='hmac-sha256')
+                self.state['NHKs'] = kdf(self.state['RK'], b'\x03')
+                self.state['CKs'] = kdf(self.state['RK'], b'\x05')
             else:
-                self.state['NHKs'] = pbkdf2(self.state['RK'], b'\x04', 10, prf='hmac-sha256')
-                self.state['CKs'] = pbkdf2(self.state['RK'], b'\x06', 10, prf='hmac-sha256')
+                self.state['NHKs'] = kdf(self.state['RK'], b'\x04')
+                self.state['CKs'] = kdf(self.state['RK'], b'\x06')
             self.state['PNs'] = self.state['Ns']
             self.state['Ns'] = 0
             self.state['ratchet_flag'] = False
-        mk = hashlib.sha256(self.state['CKs'] + '0').digest()
+        mk = hash_(self.state['CKs'] + '0')
         msg1 = self.enc(self.state['HKs'], str(self.state['Ns']).zfill(3) +
                         str(self.state['PNs']).zfill(3) + self.state['DHRs'])
         msg2 = self.enc(mk, plaintext)
@@ -262,7 +262,7 @@ class Axolotl:
         pad = os.urandom(pad_length - 1) + chr(pad_length)
         msg = msg1 + pad + msg2
         self.state['Ns'] += 1
-        self.state['CKs'] = hashlib.sha256(self.state['CKs'] + '1').digest()
+        self.state['CKs'] = hash_(self.state['CKs'] + '1')
         return msg
 
 
@@ -318,11 +318,11 @@ class Axolotl:
     def stageSkippedMK(self, HKr, Nr, Np, CKr):
         CKp = CKr
         for i in range(Np - Nr):
-            mk = hashlib.sha256(CKp + '0').digest()
-            CKp = hashlib.sha256(CKp + '1').digest()
+            mk = hash_(CKp + '0')
+            CKp = hash_(CKp + '1')
             self.staged_HK_mk[mk] = HKr
-        mk = hashlib.sha256(CKp + '0').digest()
-        CKp = hashlib.sha256(CKp + '1').digest()
+        mk = hash_(CKp + '0')
+        CKp = hash_(CKp + '1')
         return CKp, mk
 
     def decrypt(self, msg):
@@ -356,13 +356,13 @@ class Axolotl:
             if self.state['CKr']:
                 self.stageSkippedMK(self.state['HKr'], self.state['Nr'], PNp, self.state['CKr'])
             HKp = self.state['NHKr']
-            RKp = hashlib.sha256(self.state['RK'] + self.genDH(self.state['DHRs_priv'], DHRp)).digest()
+            RKp = hash_(self.state['RK'] + self.genDH(self.state['DHRs_priv'], DHRp))
             if self.mode:
-                NHKp = pbkdf2(RKp, b'\x04', 10, prf='hmac-sha256')
-                CKp = pbkdf2(RKp, b'\x06', 10, prf='hmac-sha256')
+                NHKp = kdf(RKp, b'\x04')
+                CKp = kdf(RKp, b'\x06')
             else:
-                NHKp = pbkdf2(RKp, b'\x03', 10, prf='hmac-sha256')
-                CKp = pbkdf2(RKp, b'\x05', 10, prf='hmac-sha256')
+                NHKp = kdf(RKp, b'\x03')
+                CKp = kdf(RKp, b'\x05')
             CKp, mk = self.stageSkippedMK(HKp, 0, Np, CKp)
             body = self.dec(mk, msg[106:])
             if not body or body == '':
@@ -585,3 +585,11 @@ class Axolotl:
             print 'Mode: Alice'
         else:
             print 'Mode: Bob'
+
+
+def hash_(data):
+    return hashlib.sha256(data).digest()
+
+
+def kdf(secret, salt):
+    return pbkdf2(secret, salt, rounds=10, prf='hmac-sha256')
