@@ -311,20 +311,26 @@ class Axolotl:
     def trySkippedMK(self, msg, pad_length, name, other_name):
         with self.db:
             cur = self.db.cursor()
-            cur.execute('SELECT * FROM skipped_mk')
+            cur.execute('''
+                SELECT
+                    *
+                FROM
+                    skipped_mk
+                WHERE
+                    my_identity = ? AND
+                    to_identity = ?''', (name, other_name))
             rows = cur.fetchall()
             for row in rows:
-                if name == row[0] and other_name == row[1]:
-                    msg1 = msg[:HEADER_LEN-pad_length]
-                    msg2 = msg[HEADER_LEN:]
-                    header = decrypt_symmetric(a2b(row[2]), msg1)
-                    body = decrypt_symmetric(a2b(row[3]), msg2)
-                    if header != '' and body != '':
-                        cur.execute('''
-                            DELETE FROM
-                                skipped_mk
-                            WHERE mk = ?''', (row[3],))
-                        return body
+                msg1 = msg[:HEADER_LEN-pad_length]
+                msg2 = msg[HEADER_LEN:]
+                header = decrypt_symmetric(a2b(row[2]), msg1)
+                body = decrypt_symmetric(a2b(row[3]), msg2)
+                if header != '' and body != '':
+                    cur.execute('''
+                        DELETE FROM
+                            skipped_mk
+                        WHERE mk = ?''', (row[3],))
+                    return body
         return False
 
     def stageSkippedMK(self, HKr, Nr, Np, CKr):
@@ -496,42 +502,49 @@ class Axolotl:
         with self.db:
             cur = self.db.cursor()
             try:
-                cur.execute('SELECT * FROM conversations')
+                cur.execute('''
+                    SELECT
+                        *
+                    FROM
+                        conversations
+                    WHERE
+                        my_identity = ? AND
+                        other_identity = ?''', (name, other_name))
             except sqlite3.OperationalError:
                 print 'Bad sql! Password problem - cannot loadState()'
                 sys.exit(1)
-            rows = cur.fetchall()
-            for row in rows:
-                if row[0] == name and row[1] == other_name:
-                    self.state = \
-                           { 'name': row[0],
-                             'other_name': row[1],
-                             'RK': a2b(row[2]),
-                             'NHKs': a2b(row[5]),
-                             'NHKr': a2b(row[6]),
-                             'DHIs_priv': a2b(row[9]),
-                             'DHIs': a2b(row[10]),
-                             'CONVid': a2b(row[15]),
-                             'Ns': row[16],
-                             'Nr': row[17],
-                             'PNs': row[18],
-                           }
-                    self.name = self.state['name']
-                    self.state['HKs'] = None if row[3] == '0' else a2b(row[3])
-                    self.state['HKr'] = None if row[4] == '0' else a2b(row[4])
-                    self.state['CKs'] = None if row[7] == '0' else a2b(row[7])
-                    self.state['CKr'] = None if row[8] == '0' else a2b(row[8])
-                    self.state['DHIr'] = None if row[11] == '0' else a2b(row[11])
-                    self.state['DHRs_priv'] = None if row[12] == '0' else a2b(row[12])
-                    self.state['DHRs'] = None if row[13] == '0' else a2b(row[13])
-                    self.state['DHRr'] = None if row[14] == '0' else a2b(row[14])
-                    ratchet_flag = row[19]
-                    self.state['ratchet_flag'] = True if ratchet_flag == 1 \
-                                                       else False
-                    mode = row[20]
-                    self.mode = True if mode == 1 else False
-                    return # exit at first match
-            return False # if no matches
+            row = cur.fetchone()
+            if row:
+                self.state = \
+                        { 'name': row[0],
+                            'other_name': row[1],
+                            'RK': a2b(row[2]),
+                            'NHKs': a2b(row[5]),
+                            'NHKr': a2b(row[6]),
+                            'DHIs_priv': a2b(row[9]),
+                            'DHIs': a2b(row[10]),
+                            'CONVid': a2b(row[15]),
+                            'Ns': row[16],
+                            'Nr': row[17],
+                            'PNs': row[18],
+                        }
+                self.name = self.state['name']
+                self.state['HKs'] = None if row[3] == '0' else a2b(row[3])
+                self.state['HKr'] = None if row[4] == '0' else a2b(row[4])
+                self.state['CKs'] = None if row[7] == '0' else a2b(row[7])
+                self.state['CKr'] = None if row[8] == '0' else a2b(row[8])
+                self.state['DHIr'] = None if row[11] == '0' else a2b(row[11])
+                self.state['DHRs_priv'] = None if row[12] == '0' else a2b(row[12])
+                self.state['DHRs'] = None if row[13] == '0' else a2b(row[13])
+                self.state['DHRr'] = None if row[14] == '0' else a2b(row[14])
+                ratchet_flag = row[19]
+                self.state['ratchet_flag'] = True if ratchet_flag == 1 \
+                                                    else False
+                mode = row[20]
+                self.mode = True if mode == 1 else False
+                return # exit at first match
+            else:
+                return False # if no matches
 
     def openDB(self):
 
