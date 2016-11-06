@@ -323,13 +323,14 @@ class Axolotl:
             for row in rows:
                 msg1 = msg[:HEADER_LEN-pad_length]
                 msg2 = msg[HEADER_LEN:]
-                header = decrypt_symmetric(a2b(row[2]), msg1)
-                body = decrypt_symmetric(a2b(row[3]), msg2)
+                header = decrypt_symmetric(a2b(row['hkr']), msg1)
+                body = decrypt_symmetric(a2b(row['mk']), msg2)
                 if header != '' and body != '':
                     cur.execute('''
                         DELETE FROM
                             skipped_mk
-                        WHERE mk = ?''', (row[3],))
+                        WHERE
+                            mk = ?''', (row['mk'],))
                     return body
         return False
 
@@ -516,31 +517,31 @@ class Axolotl:
             row = cur.fetchone()
             if row:
                 self.state = \
-                        { 'name': row[0],
-                            'other_name': row[1],
-                            'RK': a2b(row[2]),
-                            'NHKs': a2b(row[5]),
-                            'NHKr': a2b(row[6]),
-                            'DHIs_priv': a2b(row[9]),
-                            'DHIs': a2b(row[10]),
-                            'CONVid': a2b(row[15]),
-                            'Ns': row[16],
-                            'Nr': row[17],
-                            'PNs': row[18],
+                        { 'name': row['my_identity'],
+                            'other_name': row['other_identity'],
+                            'RK': a2b(row['rk']),
+                            'NHKs': a2b(row['nhks']),
+                            'NHKr': a2b(row['nhkr']),
+                            'DHIs_priv': a2b(row['dhis_priv']),
+                            'DHIs': a2b(row['dhis']),
+                            'CONVid': a2b(row['convid']),
+                            'Ns': row['ns'],
+                            'Nr': row['nr'],
+                            'PNs': row['pns'],
                         }
                 self.name = self.state['name']
-                self.state['HKs'] = None if row[3] == '0' else a2b(row[3])
-                self.state['HKr'] = None if row[4] == '0' else a2b(row[4])
-                self.state['CKs'] = None if row[7] == '0' else a2b(row[7])
-                self.state['CKr'] = None if row[8] == '0' else a2b(row[8])
-                self.state['DHIr'] = None if row[11] == '0' else a2b(row[11])
-                self.state['DHRs_priv'] = None if row[12] == '0' else a2b(row[12])
-                self.state['DHRs'] = None if row[13] == '0' else a2b(row[13])
-                self.state['DHRr'] = None if row[14] == '0' else a2b(row[14])
-                ratchet_flag = row[19]
+                self.state['HKs'] = None if row['hks'] == '0' else a2b(row['hks'])
+                self.state['HKr'] = None if row['hkr'] == '0' else a2b(row['hkr'])
+                self.state['CKs'] = None if row['cks'] == '0' else a2b(row['cks'])
+                self.state['CKr'] = None if row['ckr'] == '0' else a2b(row['ckr'])
+                self.state['DHIr'] = None if row['dhir'] == '0' else a2b(row['dhir'])
+                self.state['DHRs_priv'] = None if row['dhrs_priv'] == '0' else a2b(row['dhrs_priv'])
+                self.state['DHRs'] = None if row['dhrs'] == '0' else a2b(row['dhrs'])
+                self.state['DHRr'] = None if row['dhrr'] == '0' else a2b(row['dhrr'])
+                ratchet_flag = row['ratchet_flag']
                 self.state['ratchet_flag'] = True if ratchet_flag == 1 \
                                                     else False
-                mode = row[20]
+                mode = row['mode']
                 self.mode = True if mode == 1 else False
                 return # exit at first match
             else:
@@ -549,6 +550,7 @@ class Axolotl:
     def openDB(self):
 
         db = sqlite3.connect(':memory:', check_same_thread=self.nonthreaded_sql)
+        db.row_factory = sqlite3.Row
 
         try:
             with open(self.dbname, 'rb') as f:
