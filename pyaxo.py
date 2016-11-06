@@ -104,40 +104,50 @@ class Axolotl:
         self.storeTime = 2*86400 # minimum time (seconds) to store missed ephemeral message keys
         with self.db:
             cur = self.db.cursor()
-            cur.execute('CREATE TABLE IF NOT EXISTS skipped_mk ( \
-              my_identity, \
-              to_identity, \
-              HKr TEXT, \
-              mk TEXT, \
-              timestamp INTEGER \
-            )')
-            cur.execute('CREATE UNIQUE INDEX IF NOT EXISTS \
-                         message_keys ON skipped_mk (mk)')
-            cur.execute('CREATE TABLE IF NOT EXISTS conversations ( \
-              my_identity TEXT, \
-              other_identity TEXT, \
-              RK TEXT, \
-              HKs TEXT, \
-              HKr TEXT, \
-              NHKs TEXT, \
-              NHKr TEXT, \
-              CKs TEXT, \
-              CKr TEXT, \
-              DHIs_priv TEXT, \
-              DHIs TEXT, \
-              DHIr TEXT, \
-              DHRs_priv TEXT, \
-              DHRs TEXT, \
-              DHRr TEXT, \
-              CONVid TEXT, \
-              Ns INTEGER, \
-              Nr INTEGER, \
-              PNs INTEGER, \
-              ratchet_flag INTEGER, \
-              mode INTEGER \
-            )')
-            cur.execute('CREATE UNIQUE INDEX IF NOT EXISTS \
-                         conversation_route ON conversations (my_identity, other_identity)')
+            cur.execute('''
+                CREATE TABLE IF NOT EXISTS
+                    skipped_mk (
+                        my_identity,
+                        to_identity,
+                        HKr TEXT,
+                        mk TEXT,
+                        timestamp INTEGER)''')
+            cur.execute('''
+                CREATE UNIQUE INDEX IF NOT EXISTS
+                    message_keys
+                ON
+                    skipped_mk (mk)''')
+            cur.execute('''
+                CREATE TABLE IF NOT EXISTS
+                    conversations (
+                        my_identity TEXT,
+                        other_identity TEXT,
+                        RK TEXT,
+                        HKs TEXT,
+                        HKr TEXT,
+                        NHKs TEXT,
+                        NHKr TEXT,
+                        CKs TEXT,
+                        CKr TEXT,
+                        DHIs_priv TEXT,
+                        DHIs TEXT,
+                        DHIr TEXT,
+                        DHRs_priv TEXT,
+                        DHRs TEXT,
+                        DHRr TEXT,
+                        CONVid TEXT,
+                        Ns INTEGER,
+                        Nr INTEGER,
+                        PNs INTEGER,
+                        ratchet_flag INTEGER,
+                        mode INTEGER)''')
+            cur.execute('''
+                CREATE UNIQUE INDEX IF NOT EXISTS
+                    conversation_route
+                ON
+                    conversations (
+                        my_identity,
+                        other_identity)''')
         self.commitSkippedMK()
 
     def tripleDH(self, a, a0, B, B0):
@@ -277,21 +287,26 @@ class Axolotl:
         with self.db:
             cur = self.db.cursor()
             for mk, HKr in self.staged_HK_mk.iteritems():
-                cur.execute('REPLACE INTO skipped_mk ( \
-                  my_identity, \
-                  to_identity, \
-                  HKr, \
-                  mk, \
-                  timestamp \
-                ) VALUES (?, ?, ?, ?, ?)', \
-                ( self.state['name'], \
-                  self.state['other_name'], \
-                  b2a(HKr).strip(), \
-                  b2a(mk).strip(), \
-                  timestamp \
-                ))
+                cur.execute('''
+                    REPLACE INTO
+                        skipped_mk (
+                            my_identity,
+                            to_identity,
+                            HKr,
+                            mk,
+                            timestamp)
+                    VALUES (?, ?, ?, ?, ?)''', (
+                        self.state['name'],
+                        self.state['other_name'],
+                        b2a(HKr).strip(),
+                        b2a(mk).strip(),
+                            timestamp))
             rowtime = timestamp - self.storeTime
-            cur.execute('DELETE FROM skipped_mk WHERE timestamp < ?', (rowtime,))
+            cur.execute('''
+                DELETE FROM
+                    skipped_mk
+                WHERE
+                    timestamp < ?''', (rowtime,))
 
     def trySkippedMK(self, msg, pad_length, name, other_name):
         with self.db:
@@ -305,7 +320,10 @@ class Axolotl:
                     header = decrypt_symmetric(a2b(row[2]), msg1)
                     body = decrypt_symmetric(a2b(row[3]), msg2)
                     if header != '' and body != '':
-                        cur.execute('DELETE FROM skipped_mk WHERE mk = ?', (row[3],))
+                        cur.execute('''
+                            DELETE FROM
+                                skipped_mk
+                            WHERE mk = ?''', (row[3],))
                         return body
         return False
 
@@ -424,51 +442,53 @@ class Axolotl:
         mode = 1 if self.mode else 0
         with self.db:
             cur = self.db.cursor()
-            cur.execute('REPLACE INTO conversations ( \
-              my_identity, \
-              other_identity, \
-              RK, \
-              HKS, \
-              HKr, \
-              NHKs, \
-              NHKr, \
-              CKs, \
-              CKr, \
-              DHIs_priv, \
-              DHIs, \
-              DHIr, \
-              DHRs_priv, \
-              DHRs, \
-              DHRr, \
-              CONVid, \
-              Ns, \
-              Nr, \
-              PNs, \
-              ratchet_flag, \
-              mode \
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', \
-            ( self.state['name'], \
-              self.state['other_name'], \
-              b2a(self.state['RK']).strip(), \
-              HKs, \
-              HKr, \
-              b2a(self.state['NHKs']).strip(), \
-              b2a(self.state['NHKr']).strip(), \
-              CKs, \
-              CKr, \
-              b2a(self.state['DHIs_priv']).strip(), \
-              b2a(self.state['DHIs']).strip(), \
-              DHIr, \
-              DHRs_priv, \
-              DHRs, \
-              DHRr, \
-              b2a(self.state['CONVid']).strip(), \
-              self.state['Ns'], \
-              self.state['Nr'], \
-              self.state['PNs'], \
-              ratchet_flag, \
-              mode \
-            ))
+            cur.execute('''
+                REPLACE INTO
+                    conversations (
+                        my_identity,
+                        other_identity,
+                        RK,
+                        HKS,
+                        HKr,
+                        NHKs,
+                        NHKr,
+                        CKs,
+                        CKr,
+                        DHIs_priv,
+                        DHIs,
+                        DHIr,
+                        DHRs_priv,
+                        DHRs,
+                        DHRr,
+                        CONVid,
+                        Ns,
+                        Nr,
+                        PNs,
+                        ratchet_flag,
+                        mode)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?)''', (
+                    self.state['name'],
+                    self.state['other_name'],
+                    b2a(self.state['RK']).strip(),
+                    HKs,
+                    HKr,
+                    b2a(self.state['NHKs']).strip(),
+                    b2a(self.state['NHKr']).strip(),
+                    CKs,
+                    CKr,
+                    b2a(self.state['DHIs_priv']).strip(),
+                    b2a(self.state['DHIs']).strip(),
+                    DHIr,
+                    DHRs_priv,
+                    DHRs,
+                    DHRr,
+                    b2a(self.state['CONVid']).strip(),
+                    self.state['Ns'],
+                    self.state['Nr'],
+                    self.state['PNs'],
+                    ratchet_flag,
+                    mode))
         self.writeDB()
 
     def loadState(self, name, other_name):
