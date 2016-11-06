@@ -70,6 +70,9 @@ gpg.encoding = 'utf-8'
 ALICE_MODE = True
 BOB_MODE = False
 
+HEADER_LEN = 106
+HEADER_PAD_NUM_LEN = 1
+HEADER_COUNT_NUM_LEN = 3
 
 class Axolotl:
 
@@ -253,12 +256,12 @@ class Axolotl:
         mk = hash_(self.state['CKs'] + '0')
         msg1 = encrypt_symmetric(
             self.state['HKs'],
-            str(self.state['Ns']).zfill(3) +
-            str(self.state['PNs']).zfill(3) +
+            str(self.state['Ns']).zfill(HEADER_COUNT_NUM_LEN) +
+            str(self.state['PNs']).zfill(HEADER_COUNT_NUM_LEN) +
             self.state['DHRs'])
         msg2 = encrypt_symmetric(mk, plaintext)
-        pad_length = 106 - len(msg1)
-        pad = os.urandom(pad_length - 1) + chr(pad_length)
+        pad_length = HEADER_LEN - len(msg1)
+        pad = os.urandom(pad_length - HEADER_PAD_NUM_LEN) + chr(pad_length)
         msg = msg1 + pad + msg2
         self.state['Ns'] += 1
         self.state['CKs'] = hash_(self.state['CKs'] + '1')
@@ -299,8 +302,8 @@ class Axolotl:
             rows = cur.fetchall()
             for row in rows:
                 if name == row[0] and other_name == row[1]:
-                    msg1 = msg[:106 - pad_length]
-                    msg2 = msg[106:]
+                    msg1 = msg[:HEADER_LEN-pad_length]
+                    msg2 = msg[HEADER_LEN:]
                     header = decrypt_symmetric(a2b(row[2]), msg1)
                     body = decrypt_symmetric(a2b(row[3]), msg2)
                     if header != '' and body != '':
@@ -319,9 +322,9 @@ class Axolotl:
         return CKp, mk
 
     def decrypt(self, msg):
-        pad = msg[105:106]
+        pad = msg[HEADER_LEN-HEADER_PAD_NUM_LEN:HEADER_LEN]
         pad_length = ord(pad)
-        msg1 = msg[:106-pad_length]
+        msg1 = msg[:HEADER_LEN-pad_length]
 
         body = self.trySkippedMK(msg, pad_length, self.state['name'],
                                       self.state['other_name'])
@@ -332,9 +335,9 @@ class Axolotl:
         if self.state['HKr']:
             header = decrypt_symmetric(self.state['HKr'], msg1)
         if header and header != '':
-            Np = int(header[:3])
+            Np = int(header[:HEADER_COUNT_NUM_LEN])
             CKp, mk = self.stageSkippedMK(self.state['HKr'], self.state['Nr'], Np, self.state['CKr'])
-            body = decrypt_symmetric(mk, msg[106:])
+            body = decrypt_symmetric(mk, msg[HEADER_LEN:])
             if not body or body == '':
                 print 'Undecipherable message'
                 sys.exit(1)
@@ -343,9 +346,9 @@ class Axolotl:
             if self.state['ratchet_flag'] or not header or header == '':
                 print 'Undecipherable message'
                 sys.exit(1)
-            Np = int(header[:3])
-            PNp = int(header[3:6])
-            DHRp = header[6:]
+            Np = int(header[:HEADER_COUNT_NUM_LEN])
+            PNp = int(header[HEADER_COUNT_NUM_LEN:HEADER_COUNT_NUM_LEN*2])
+            DHRp = header[HEADER_COUNT_NUM_LEN*2:]
             if self.state['CKr']:
                 self.stageSkippedMK(self.state['HKr'], self.state['Nr'], PNp, self.state['CKr'])
             HKp = self.state['NHKr']
@@ -357,7 +360,7 @@ class Axolotl:
                 NHKp = kdf(RKp, b'\x03')
                 CKp = kdf(RKp, b'\x05')
             CKp, mk = self.stageSkippedMK(HKp, 0, Np, CKp)
-            body = decrypt_symmetric(mk, msg[106:])
+            body = decrypt_symmetric(mk, msg[HEADER_LEN:])
             if not body or body == '':
                 print 'Undecipherable message'
                 sys.exit(1)
@@ -615,7 +618,7 @@ def encrypt_symmetric(key, plaintext):
     key = binascii.hexlify(key)
     msg = gpg.encrypt(plaintext, recipients=None, symmetric=GPG_CIPHER,
                       armor=False, always_trust=True, passphrase=key)
-    return msg.data[6:]
+    return msg.data[len(GPG_HEADER):]
 
 
 def decrypt_symmetric(key, ciphertext):
