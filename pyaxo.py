@@ -70,6 +70,12 @@ gpg.encoding = 'utf-8'
 ALICE_MODE = True
 BOB_MODE = False
 
+SALTS = {'RK': b'\x00',
+         'HK': {ALICE_MODE: b'\x01', BOB_MODE: b'\x02'},
+         'NHK': {ALICE_MODE: b'\x03', BOB_MODE: b'\x04'},
+         'CK': {ALICE_MODE: b'\x05', BOB_MODE: b'\x06'},
+         'CONVid': b'\x07'}
+
 HEADER_LEN = 106
 HEADER_PAD_NUM_LEN = 1
 HEADER_COUNT_NUM_LEN = 3
@@ -179,37 +185,33 @@ class Axolotl:
             if self.mode is None: # mode not selected
                 sys.exit(1)
         if self.mode is ALICE_MODE:
-            RK = kdf(mkey, b'\x00')
             HKs = None
-            HKr = kdf(mkey, b'\x02')
-            NHKs = kdf(mkey, b'\x03')
-            NHKr = kdf(mkey, b'\x04')
+            HKr = kdf(mkey, SALTS['HK'][BOB_MODE])
             CKs = None
-            CKr = kdf(mkey, b'\x06')
+            CKr = kdf(mkey, SALTS['CK'][BOB_MODE])
             DHRs_priv = None
             DHRs = None
             DHRr = other_ratchetKey
-            CONVid = kdf(mkey, b'\x07')
             Ns = 0
             Nr = 0
             PNs = 0
             ratchet_flag = True
         else: # bob mode
-            RK = kdf(mkey, b'\x00')
-            HKs = kdf(mkey, b'\x02')
+            HKs = kdf(mkey, SALTS['HK'][BOB_MODE])
             HKr = None
-            NHKs = kdf(mkey, b'\x04')
-            NHKr = kdf(mkey, b'\x03')
-            CKs = kdf(mkey, b'\x06')
+            CKs = kdf(mkey, SALTS['CK'][BOB_MODE])
             CKr = None
             DHRs_priv = self.state['DHRs_priv']
             DHRs = self.state['DHRs']
             DHRr = None
-            CONVid = kdf(mkey, b'\x07')
             Ns = 0
             Nr = 0
             PNs = 0
             ratchet_flag = False
+        RK = kdf(mkey, SALTS['RK'])
+        NHKs = kdf(mkey, SALTS['NHK'][self.mode])
+        NHKr = kdf(mkey, SALTS['NHK'][not self.mode])
+        CONVid = kdf(mkey, SALTS['CONVid'])
         DHIr = other_identityKey
 
         self.state = \
@@ -244,12 +246,8 @@ class Axolotl:
             self.state['HKs'] = self.state['NHKs']
             self.state['RK'] = hash_(self.state['RK'] +
                                      generate_dh(self.state['DHRs_priv'], self.state['DHRr']))
-            if self.mode is ALICE_MODE:
-                self.state['NHKs'] = kdf(self.state['RK'], b'\x03')
-                self.state['CKs'] = kdf(self.state['RK'], b'\x05')
-            else:
-                self.state['NHKs'] = kdf(self.state['RK'], b'\x04')
-                self.state['CKs'] = kdf(self.state['RK'], b'\x06')
+            self.state['NHKs'] = kdf(self.state['RK'], SALTS['NHK'][self.mode])
+            self.state['CKs'] = kdf(self.state['RK'], SALTS['CK'][self.mode])
             self.state['PNs'] = self.state['Ns']
             self.state['Ns'] = 0
             self.state['ratchet_flag'] = False
@@ -353,12 +351,8 @@ class Axolotl:
                 self.stageSkippedMK(self.state['HKr'], self.state['Nr'], PNp, self.state['CKr'])
             HKp = self.state['NHKr']
             RKp = hash_(self.state['RK'] + generate_dh(self.state['DHRs_priv'], DHRp))
-            if self.mode is ALICE_MODE:
-                NHKp = kdf(RKp, b'\x04')
-                CKp = kdf(RKp, b'\x06')
-            else:
-                NHKp = kdf(RKp, b'\x03')
-                CKp = kdf(RKp, b'\x05')
+            NHKp = kdf(RKp, SALTS['NHK'][not self.mode])
+            CKp = kdf(RKp, SALTS['CK'][not self.mode])
             CKp, mk = self.stageSkippedMK(HKp, 0, Np, CKp)
             body = decrypt_symmetric(mk, msg[HEADER_LEN:])
             if not body or body == '':
