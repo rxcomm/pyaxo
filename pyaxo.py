@@ -67,6 +67,9 @@ gpg = gnupg.GPG(gnupghome=user_path+'/.axolotl', gpgbinary=GPGBINARY, keyring=KE
                 '--personal-digest-preferences=sha256','--s2k-digest-algo=sha256'])
 gpg.encoding = 'utf-8'
 
+ALICE_MODE = True
+BOB_MODE = False
+
 
 class Axolotl:
 
@@ -156,9 +159,9 @@ class Axolotl:
                 print 'Key fingerprint not confirmed - exiting...'
                 sys.exit()
         if self.state['DHIs'] < other_identityKey:
-            self.mode = True
+            self.mode = ALICE_MODE
         else:
-            self.mode = False
+            self.mode = BOB_MODE
         mkey = self.tripleDH(self.state['DHIs_priv'], self.handshakeKey,
                              other_identityKey, other_handshakeKey)
 
@@ -172,7 +175,7 @@ class Axolotl:
         else:
             if self.mode is None: # mode not selected
                 sys.exit(1)
-        if self.mode: # alice mode
+        if self.mode is ALICE_MODE:
             RK = kdf(mkey, b'\x00')
             HKs = None
             HKr = kdf(mkey, b'\x02')
@@ -238,7 +241,7 @@ class Axolotl:
             self.state['HKs'] = self.state['NHKs']
             self.state['RK'] = hash_(self.state['RK'] +
                                      generate_dh(self.state['DHRs_priv'], self.state['DHRr']))
-            if self.mode:
+            if self.mode is ALICE_MODE:
                 self.state['NHKs'] = kdf(self.state['RK'], b'\x03')
                 self.state['CKs'] = kdf(self.state['RK'], b'\x05')
             else:
@@ -347,7 +350,7 @@ class Axolotl:
                 self.stageSkippedMK(self.state['HKr'], self.state['Nr'], PNp, self.state['CKr'])
             HKp = self.state['NHKr']
             RKp = hash_(self.state['RK'] + generate_dh(self.state['DHRs_priv'], DHRp))
-            if self.mode:
+            if self.mode is ALICE_MODE:
                 NHKp = kdf(RKp, b'\x04')
                 CKp = kdf(RKp, b'\x06')
             else:
@@ -571,7 +574,7 @@ class Axolotl:
                          print key + ': ' + b2a(self.state[key]).strip()
                  else:
                      print key + ': ' + str(self.state[key])
-        if self.mode:
+        if self.mode is ALICE_MODE:
             print 'Mode: Alice'
         else:
             print 'Mode: Bob'
@@ -597,8 +600,8 @@ def generate_dh(a, b):
     return key.get_shared_key(keys.Public(b))
 
 
-def generate_3dh(a, a0, b, b0, mode=True):
-    if mode:
+def generate_3dh(a, a0, b, b0, mode=ALICE_MODE):
+    if mode is ALICE_MODE:
         return hash_(generate_dh(a, b0) +
                      generate_dh(a0, b) +
                      generate_dh(a0, b0))
