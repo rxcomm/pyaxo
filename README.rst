@@ -24,7 +24,7 @@ Installation instructions
 Make sure that you have the following::
 
     sudo apt-get install python-dev # If using Debian/Ubuntu
-    sudo yum install python-devel # If using Fedora
+    sudo yum install python-devel redhat-rpm-config # If using Fedora
 
 pyaxo also uses `python-gnupg`_, `curve25519-donna`_ and `passlib`_,
 but these packages will be downloaded and installed automatically by
