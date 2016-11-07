@@ -1,5 +1,7 @@
 include COPYING
 include README.rst
+include _version.py
+include versioneer.py
 recursive-include examples *
 recursive-include tests *
 recursive-include utilities *
