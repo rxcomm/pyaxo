@@ -410,8 +410,8 @@ class SqlitePersistence(object):
 
         with db:
             try:
-                with open(self.dbname, 'rb') as f:
-                    if self.dbpassphrase is not None:
+                if self.dbpassphrase is not None:
+                    with open(self.dbname, 'rb') as f:
                         ciphertext = f.read()
                         box = nacl.secret.SecretBox(self.dbpassphrase)
                         try:
@@ -421,7 +421,8 @@ class SqlitePersistence(object):
                             sys.exit(1)
                         else:
                             db.cursor().executescript(sql)
-                    else:
+                else:
+                    with open(self.dbname, 'r') as f:
                         sql = f.read()
                         try:
                             db.cursor().executescript(sql)
