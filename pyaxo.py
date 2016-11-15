@@ -528,22 +528,23 @@ class SqlitePersistence(object):
                 WHERE
                     my_identity = ? AND
                     to_identity = ?''', (name, other_name))
-            for row in rows:
-                msg1 = msg[:HEADER_LEN-pad_length]
-                msg2 = msg[HEADER_LEN:]
-                try:
-                    header = decrypt_symmetric(a2b(row['hkr']), msg1)
-                    body = decrypt_symmetric(a2b(row['mk']), msg2)
-                except CryptoError:
-                    header = ''
-                    body = ''
-                if header != '' and body != '':
+        for row in rows:
+            msg1 = msg[:HEADER_LEN-pad_length]
+            msg2 = msg[HEADER_LEN:]
+            try:
+                header = decrypt_symmetric(a2b(row['hkr']), msg1)
+                body = decrypt_symmetric(a2b(row['mk']), msg2)
+            except CryptoError:
+                header = ''
+                body = ''
+            if header != '' and body != '':
+                with self.db as db:
                     db.execute('''
                         DELETE FROM
                             skipped_mk
                         WHERE
                             mk = ?''', (row['mk'],))
-                    return body
+                return body
         return None
 
     def save_state(self, state, mode):
@@ -623,36 +624,36 @@ class SqlitePersistence(object):
                 print 'Bad sql! Password problem - cannot load_state()'
                 sys.exit(1)
             row = cur.fetchone()
-            if row:
-                state = \
-                        { 'name': row['my_identity'],
-                            'other_name': row['other_identity'],
-                            'RK': a2b(row['rk']),
-                            'NHKs': a2b(row['nhks']),
-                            'NHKr': a2b(row['nhkr']),
-                            'DHIs_priv': a2b(row['dhis_priv']),
-                            'DHIs': a2b(row['dhis']),
-                            'CONVid': a2b(row['convid']),
-                            'Ns': row['ns'],
-                            'Nr': row['nr'],
-                            'PNs': row['pns'],
-                        }
-                state['HKs'] = None if row['hks'] == '0' else a2b(row['hks'])
-                state['HKr'] = None if row['hkr'] == '0' else a2b(row['hkr'])
-                state['CKs'] = None if row['cks'] == '0' else a2b(row['cks'])
-                state['CKr'] = None if row['ckr'] == '0' else a2b(row['ckr'])
-                state['DHIr'] = None if row['dhir'] == '0' else a2b(row['dhir'])
-                state['DHRs_priv'] = None if row['dhrs_priv'] == '0' else a2b(row['dhrs_priv'])
-                state['DHRs'] = None if row['dhrs'] == '0' else a2b(row['dhrs'])
-                state['DHRr'] = None if row['dhrr'] == '0' else a2b(row['dhrr'])
-                ratchet_flag = row['ratchet_flag']
-                state['ratchet_flag'] = True if ratchet_flag == 1 \
-                                                    else False
-                mode = row['mode']
-                self.mode = True if mode == 1 else False
-                return (state, mode)  # exit at first match
-            else:
-                return ()  # if no matches
+        if row:
+            state = \
+                    { 'name': row['my_identity'],
+                        'other_name': row['other_identity'],
+                        'RK': a2b(row['rk']),
+                        'NHKs': a2b(row['nhks']),
+                        'NHKr': a2b(row['nhkr']),
+                        'DHIs_priv': a2b(row['dhis_priv']),
+                        'DHIs': a2b(row['dhis']),
+                        'CONVid': a2b(row['convid']),
+                        'Ns': row['ns'],
+                        'Nr': row['nr'],
+                        'PNs': row['pns'],
+                    }
+            state['HKs'] = None if row['hks'] == '0' else a2b(row['hks'])
+            state['HKr'] = None if row['hkr'] == '0' else a2b(row['hkr'])
+            state['CKs'] = None if row['cks'] == '0' else a2b(row['cks'])
+            state['CKr'] = None if row['ckr'] == '0' else a2b(row['ckr'])
+            state['DHIr'] = None if row['dhir'] == '0' else a2b(row['dhir'])
+            state['DHRs_priv'] = None if row['dhrs_priv'] == '0' else a2b(row['dhrs_priv'])
+            state['DHRs'] = None if row['dhrs'] == '0' else a2b(row['dhrs'])
+            state['DHRr'] = None if row['dhrr'] == '0' else a2b(row['dhrr'])
+            ratchet_flag = row['ratchet_flag']
+            state['ratchet_flag'] = True if ratchet_flag == 1 \
+                                                else False
+            mode = row['mode']
+            self.mode = True if mode == 1 else False
+            return (state, mode)  # exit at first match
+        else:
+            return ()  # if no matches
 
 
 class SynchronizedSqliteConnection(sqlite3.Connection):
