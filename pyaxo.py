@@ -34,6 +34,7 @@ from binascii import a2b_base64 as a2b
 from binascii import b2a_base64 as b2a
 from getpass import getpass
 from time import time
+from threading import Lock
 from passlib.utils.pbkdf2 import pbkdf2
 from nacl.public import PrivateKey, PublicKey, Box
 from nacl.exceptions import CryptoError
@@ -398,7 +399,13 @@ class SqlitePersistence(object):
         self._create_db()
 
     def _open_db(self):
-        db = sqlite3.connect(':memory:', check_same_thread=self.nonthreaded)
+        if self.nonthreaded:
+            factory = sqlite3.Connection
+        else:
+            factory = SynchronizedSqliteConnection
+
+        db = sqlite3.connect(':memory:', check_same_thread=self.nonthreaded,
+                             factory=factory)
         db.row_factory = sqlite3.Row
 
         try:
@@ -645,6 +652,20 @@ class SqlitePersistence(object):
                 return (state, mode)  # exit at first match
             else:
                 return ()  # if no matches
+
+
+class SynchronizedSqliteConnection(sqlite3.Connection):
+    def __init__(self, *args, **kwargs):
+        super(SynchronizedSqliteConnection, self).__init__(*args, **kwargs)
+        self.lock = Lock()
+
+    def __enter__(self):
+        self.lock.acquire()
+        return super(SynchronizedSqliteConnection, self).__enter__()
+
+    def __exit__(self, *args, **kwargs):
+        super(SynchronizedSqliteConnection, self).__exit__(*args, **kwargs)
+        self.lock.release()
 
 
 def hash_(data):
