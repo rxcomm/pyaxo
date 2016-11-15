@@ -426,9 +426,8 @@ class SqlitePersistence(object):
         return db
 
     def _create_db(self):
-        with self.db:
-            cur = self.db.cursor()
-            cur.execute('''
+        with self.db as db:
+            db.execute('''
                 CREATE TABLE IF NOT EXISTS
                     skipped_mk (
                         my_identity,
@@ -436,12 +435,12 @@ class SqlitePersistence(object):
                         HKr TEXT,
                         mk TEXT,
                         timestamp INTEGER)''')
-            cur.execute('''
+            db.execute('''
                 CREATE UNIQUE INDEX IF NOT EXISTS
                     message_keys
                 ON
                     skipped_mk (mk)''')
-            cur.execute('''
+            db.execute('''
                 CREATE TABLE IF NOT EXISTS
                     conversations (
                         my_identity TEXT,
@@ -465,7 +464,7 @@ class SqlitePersistence(object):
                         PNs INTEGER,
                         ratchet_flag INTEGER,
                         mode INTEGER)''')
-            cur.execute('''
+            db.execute('''
                 CREATE UNIQUE INDEX IF NOT EXISTS
                     conversation_route
                 ON
@@ -474,7 +473,8 @@ class SqlitePersistence(object):
                         other_identity)''')
 
     def write_db(self):
-        sql = bytes('\n'.join(self.db.iterdump()))
+        with self.db as db:
+            sql = bytes('\n'.join(db.iterdump()))
         if self.dbpassphrase is not None:
             box = nacl.secret.SecretBox(self.dbpassphrase)
             nonce = nacl.utils.random(nacl.secret.SecretBox.NONCE_SIZE)
@@ -487,10 +487,9 @@ class SqlitePersistence(object):
 
     def commit_skipped_mk(self, staged_hk_mk, state):
         timestamp = int(time())
-        with self.db:
-            cur = self.db.cursor()
+        with self.db as db:
             for mk, hkr in staged_hk_mk.iteritems():
-                cur.execute('''
+                db.execute('''
                     REPLACE INTO
                         skipped_mk (
                             my_identity,
@@ -505,16 +504,15 @@ class SqlitePersistence(object):
                         b2a(mk).strip(),
                         timestamp))
             rowtime = timestamp - self.store_time
-            cur.execute('''
+            db.execute('''
                 DELETE FROM
                     skipped_mk
                 WHERE
                     timestamp < ?''', (rowtime,))
 
     def try_skipped_mk(self, msg, pad_length, name, other_name):
-        with self.db:
-            cur = self.db.cursor()
-            cur.execute('''
+        with self.db as db:
+            rows = db.execute('''
                 SELECT
                     *
                 FROM
@@ -522,7 +520,6 @@ class SqlitePersistence(object):
                 WHERE
                     my_identity = ? AND
                     to_identity = ?''', (name, other_name))
-            rows = cur.fetchall()
             for row in rows:
                 msg1 = msg[:HEADER_LEN-pad_length]
                 msg2 = msg[HEADER_LEN:]
@@ -533,7 +530,7 @@ class SqlitePersistence(object):
                     header = ''
                     body = ''
                 if header != '' and body != '':
-                    cur.execute('''
+                    db.execute('''
                         DELETE FROM
                             skipped_mk
                         WHERE
@@ -552,9 +549,8 @@ class SqlitePersistence(object):
         DHRr = 0 if state['DHRr'] is None else b2a(state['DHRr']).strip()
         ratchet_flag = 1 if state['ratchet_flag'] else 0
         mode = 1 if mode else 0
-        with self.db:
-            cur = self.db.cursor()
-            cur.execute('''
+        with self.db as db:
+            db.execute('''
                 REPLACE INTO
                     conversations (
                         my_identity,
@@ -604,8 +600,8 @@ class SqlitePersistence(object):
         self.write_db()
 
     def load_state(self, name, other_name):
-        with self.db:
-            cur = self.db.cursor()
+        with self.db as db:
+            cur = db.cursor()
             try:
                 cur.execute('''
                     SELECT
