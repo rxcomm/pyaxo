@@ -474,10 +474,7 @@ class SqlitePersistence(object):
                         other_identity)''')
 
     def write_db(self):
-        sql = ''
-        for item in self.db.iterdump():
-            sql = sql+item+'\n'
-            sql = bytes(sql)
+        sql = bytes('\n'.join(self.db.iterdump()))
         if self.dbpassphrase is not None:
             box = nacl.secret.SecretBox(self.dbpassphrase)
             nonce = nacl.utils.random(nacl.secret.SecretBox.NONCE_SIZE)
