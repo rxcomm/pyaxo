@@ -408,28 +408,29 @@ class SqlitePersistence(object):
                              factory=factory)
         db.row_factory = sqlite3.Row
 
-        try:
-            with open(self.dbname, 'rb') as f:
-                if self.dbpassphrase is not None:
-                    ciphertext = f.read()
-                    box = nacl.secret.SecretBox(self.dbpassphrase)
-                    try:
-                        sql = box.decrypt(ciphertext)
-                    except CryptoError:
-                        print 'Bad passphrase!'
-                        sys.exit(1)
+        with db:
+            try:
+                with open(self.dbname, 'rb') as f:
+                    if self.dbpassphrase is not None:
+                        ciphertext = f.read()
+                        box = nacl.secret.SecretBox(self.dbpassphrase)
+                        try:
+                            sql = box.decrypt(ciphertext)
+                        except CryptoError:
+                            print 'Bad passphrase!'
+                            sys.exit(1)
+                        else:
+                            db.cursor().executescript(sql)
                     else:
-                        db.cursor().executescript(sql)
-                else:
-                    sql = f.read()
-                    try:
-                        db.cursor().executescript(sql)
-                    except sqlite3.OperationalError:
-                        print 'Bad sql! Password problem - cannot create the database.'
-                        sys.exit(1)
-        except IOError as e:
-            if e.errno != errno.ENOENT:
-                raise
+                        sql = f.read()
+                        try:
+                            db.cursor().executescript(sql)
+                        except sqlite3.OperationalError:
+                            print 'Bad sql! Password problem - cannot create the database.'
+                            sys.exit(1)
+            except IOError as e:
+                if e.errno != errno.ENOENT:
+                    raise
         return db
 
     def _create_db(self):
@@ -482,15 +483,15 @@ class SqlitePersistence(object):
     def write_db(self):
         with self.db as db:
             sql = bytes('\n'.join(db.iterdump()))
-        if self.dbpassphrase is not None:
-            box = nacl.secret.SecretBox(self.dbpassphrase)
-            nonce = nacl.utils.random(nacl.secret.SecretBox.NONCE_SIZE)
-            crypt_sql = box.encrypt(sql, nonce)
-            with open(self.dbname, 'wb') as f:
-                f.write(crypt_sql)
-        else:
-            with open(self.dbname, 'w') as f:
-                f.write(sql)
+            if self.dbpassphrase is not None:
+                box = nacl.secret.SecretBox(self.dbpassphrase)
+                nonce = nacl.utils.random(nacl.secret.SecretBox.NONCE_SIZE)
+                crypt_sql = box.encrypt(sql, nonce)
+                with open(self.dbname, 'wb') as f:
+                    f.write(crypt_sql)
+            else:
+                with open(self.dbname, 'w') as f:
+                    f.write(sql)
 
     def commit_skipped_mk(self, staged_hk_mk, state):
         timestamp = int(time())
