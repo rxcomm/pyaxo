@@ -611,18 +611,14 @@ class SqlitePersistence(object):
     def load_state(self, name, other_name):
         with self.db as db:
             cur = db.cursor()
-            try:
-                cur.execute('''
-                    SELECT
-                        *
-                    FROM
-                        conversations
-                    WHERE
-                        my_identity = ? AND
-                        other_identity = ?''', (name, other_name))
-            except sqlite3.OperationalError:
-                print 'Bad sql! Password problem - cannot load_state()'
-                sys.exit(1)
+            cur.execute('''
+                SELECT
+                    *
+                FROM
+                    conversations
+                WHERE
+                    my_identity = ? AND
+                    other_identity = ?''', (name, other_name))
             row = cur.fetchone()
         if row:
             state = \
