@@ -22,6 +22,7 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 For more information, see https://github.com/rxcomm/pyaxo
 """
 
+import errno
 import sqlite3
 import binascii
 import hmac
@@ -419,9 +420,10 @@ class SqlitePersistence(object):
                     except sqlite3.OperationalError:
                         print 'Bad sql! Password problem - cannot create the database.'
                         sys.exit(1)
-                return db
-        except IOError:
-            return db
+        except IOError as e:
+            if e.errno != errno.ENOENT:
+                raise
+        return db
 
     def _create_db(self):
         with self.db:
