@@ -396,8 +396,6 @@ class SqlitePersistence(object):
 
         self.db = self._open_db()
 
-        self._create_db()
-
     def _open_db(self):
         if self.nonthreaded:
             factory = sqlite3.Connection
@@ -430,56 +428,57 @@ class SqlitePersistence(object):
                             print 'Bad sql! Password problem - cannot create the database.'
                             sys.exit(1)
             except IOError as e:
-                if e.errno != errno.ENOENT:
+                if e.errno == errno.ENOENT:
+                    self._create_db(db)
+                else:
                     raise
         return db
 
-    def _create_db(self):
-        with self.db as db:
-            db.execute('''
-                CREATE TABLE IF NOT EXISTS
-                    skipped_mk (
-                        my_identity,
-                        to_identity,
-                        HKr TEXT,
-                        mk TEXT,
-                        timestamp INTEGER)''')
-            db.execute('''
-                CREATE UNIQUE INDEX IF NOT EXISTS
-                    message_keys
-                ON
-                    skipped_mk (mk)''')
-            db.execute('''
-                CREATE TABLE IF NOT EXISTS
-                    conversations (
-                        my_identity TEXT,
-                        other_identity TEXT,
-                        RK TEXT,
-                        HKs TEXT,
-                        HKr TEXT,
-                        NHKs TEXT,
-                        NHKr TEXT,
-                        CKs TEXT,
-                        CKr TEXT,
-                        DHIs_priv TEXT,
-                        DHIs TEXT,
-                        DHIr TEXT,
-                        DHRs_priv TEXT,
-                        DHRs TEXT,
-                        DHRr TEXT,
-                        CONVid TEXT,
-                        Ns INTEGER,
-                        Nr INTEGER,
-                        PNs INTEGER,
-                        ratchet_flag INTEGER,
-                        mode INTEGER)''')
-            db.execute('''
-                CREATE UNIQUE INDEX IF NOT EXISTS
-                    conversation_route
-                ON
-                    conversations (
-                        my_identity,
-                        other_identity)''')
+    def _create_db(self, db):
+        db.execute('''
+            CREATE TABLE IF NOT EXISTS
+                skipped_mk (
+                    my_identity,
+                    to_identity,
+                    HKr TEXT,
+                    mk TEXT,
+                    timestamp INTEGER)''')
+        db.execute('''
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                message_keys
+            ON
+                skipped_mk (mk)''')
+        db.execute('''
+            CREATE TABLE IF NOT EXISTS
+                conversations (
+                    my_identity TEXT,
+                    other_identity TEXT,
+                    RK TEXT,
+                    HKs TEXT,
+                    HKr TEXT,
+                    NHKs TEXT,
+                    NHKr TEXT,
+                    CKs TEXT,
+                    CKr TEXT,
+                    DHIs_priv TEXT,
+                    DHIs TEXT,
+                    DHIr TEXT,
+                    DHRs_priv TEXT,
+                    DHRs TEXT,
+                    DHRr TEXT,
+                    CONVid TEXT,
+                    Ns INTEGER,
+                    Nr INTEGER,
+                    PNs INTEGER,
+                    ratchet_flag INTEGER,
+                    mode INTEGER)''')
+        db.execute('''
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                conversation_route
+            ON
+                conversations (
+                    my_identity,
+                    other_identity)''')
 
     def write_db(self):
         with self.db as db:
