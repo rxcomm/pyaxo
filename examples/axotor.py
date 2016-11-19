@@ -304,32 +304,44 @@ def smptest(secret, sock, is_server):
 
     if is_server:
         # Do the SMP protocol
-        buffer = a.decrypt(sock.recv(2311, socket.MSG_WAITALL))
+        buffer = sock.recv(2435, socket.MSG_WAITALL)
+        padlength = ord(buffer[-1:])
+        buffer = a.decrypt(buffer[:-padlength])
         buffer = smp.step2(buffer)
         buffer = a.encrypt(buffer)
-        buffer = buffer+(4412-len(buffer))*b'\x00' # pad to fixed length
+        padlength = 4535-len(buffer)
+        buffer = buffer+padlength*chr(padlength) # pad to fixed length
         sock.send(buffer)
 
-        buffer = a.decrypt(sock.recv(3345, socket.MSG_WAITALL))
+        buffer = sock.recv(3465, socket.MSG_WAITALL)
+        padlength = ord(buffer[-1:])
+        buffer = a.decrypt(buffer[:-padlength])
         buffer = smp.step4(buffer)
         buffer = a.encrypt(buffer)
-        buffer = buffer+(1243-len(buffer))*b'\x00' # pad to fixed length
+        padlength = 1365-len(buffer)
+        buffer = buffer+padlength*chr(padlength) # pad to fixed length
         sock.send(buffer)
 
     else:
         # Do the SMP protocol
         buffer = smp.step1()
         buffer = a.encrypt(buffer)
-        buffer = buffer+(2311-len(buffer))*b'\x00' # pad to fixed length
+        padlength = 2435-len(buffer)
+        buffer = buffer+padlength*chr(padlength) # pad to fixed length
         sock.send(buffer)
 
-        buffer = a.decrypt(sock.recv(4412, socket.MSG_WAITALL))
+        buffer = sock.recv(4535, socket.MSG_WAITALL)
+        padlength = ord(buffer[-1:])
+        buffer = a.decrypt(buffer[:-padlength])
         buffer = smp.step3(buffer)
         buffer = a.encrypt(buffer)
-        buffer = buffer+(3345-len(buffer))*b'\x00' # pad to fixed length
+        padlength = 3465-len(buffer)
+        buffer = buffer+padlength*chr(padlength) # pad to fixed length
         sock.send(buffer)
 
-        buffer = a.decrypt(sock.recv(1243, socket.MSG_WAITALL))
+        buffer = sock.recv(1365, socket.MSG_WAITALL)
+        padlength = ord(buffer[-1:])
+        buffer = a.decrypt(buffer[:-padlength])
         smp.step5(buffer)
 
     # Check if the secrets match

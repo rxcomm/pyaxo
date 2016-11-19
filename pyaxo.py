@@ -23,49 +23,20 @@ For more information, see https://github.com/rxcomm/pyaxo
 """
 
 import sqlite3
-import hashlib
 import binascii
 import hmac
-import gnupg
 import os
 import sys
+import nacl.utils
+import nacl.secret
 from binascii import a2b_base64 as a2b
 from binascii import b2a_base64 as b2a
 from getpass import getpass
 from time import time
 from passlib.utils.pbkdf2 import pbkdf2
-from curve25519 import keys
-
-# We cut out the inner cipher header to minimize bandwidth
-# and then add it back at decrypt time.
-cipher_hdr = {
-   'IDEA' :        '8c0d04010308',
-   '3DES' :        '8c0d04020308',
-   'CAST5' :       '8c0d04030308',
-   'BLOWFISH' :    '8c0d04040308',
-   #'RESERVED1' :   '8c0d04050308',
-   #'RESERVED2' :   '8c0d04060308',
-   'AES' :         '8c0d04070308',
-   'AES192' :      '8c0d04080308',
-   'AES256' :      '8c0d04090308',
-   'TWOFISH' :     '8c0d040a0308',
-   'CAMELLIA128' : '8c0d040b0308',
-   'CAMELLIA192' : '8c0d040c0308',
-   'CAMELLIA256' : '8c0d040d0308'
-}
-
-GPG_CIPHER = 'AES256'
-GPG_HEADER = binascii.unhexlify(cipher_hdr[GPG_CIPHER])
-
-user_path = os.path.expanduser('~')
-KEYRING = [user_path+'/.gnupg/pubring.gpg']
-SECRET_KEYRING = [user_path+'/.gnupg/secring.gpg']
-GPGBINARY = 'gpg'
-
-gpg = gnupg.GPG(gnupghome=user_path+'/.axolotl', gpgbinary=GPGBINARY, keyring=KEYRING,
-                secret_keyring=SECRET_KEYRING, options=['--throw-keyids',
-                '--personal-digest-preferences=sha256','--s2k-digest-algo=sha256'])
-gpg.encoding = 'utf-8'
+from nacl.public import PrivateKey, PublicKey, Box
+from nacl.exceptions import CryptoError
+from nacl.hash import sha256
 
 ALICE_MODE = True
 BOB_MODE = False
@@ -76,7 +47,7 @@ SALTS = {'RK': b'\x00',
          'CK': {ALICE_MODE: b'\x05', BOB_MODE: b'\x06'},
          'CONVid': b'\x07'}
 
-HEADER_LEN = 106
+HEADER_LEN = 80
 HEADER_PAD_NUM_LEN = 1
 HEADER_COUNT_NUM_LEN = 3
 
@@ -86,10 +57,13 @@ class Axolotl:
         self.name = name
         self.dbname = dbname
         self.nonthreaded_sql = nonthreaded_sql
-        if dbpassphrase != '' or dbpassphrase is None:
-            self.dbpassphrase = dbpassphrase
+        if dbpassphrase is None:
+            self.dbpassphrase = None
+        elif dbpassphrase != '':
+            self.dbpassphrase = hash_(dbpassphrase)
         else:
             self.dbpassphrase = getpass('Database passphrase for '+ self.name + ': ').strip()
+            self.dbpassphrase = hash_(self.dbpassphrase)
         try:
             self.db = self.openDB()
         except sqlite3.OperationalError:
@@ -165,7 +139,7 @@ class Axolotl:
                   other_ratchetKey, verify=True):
         if verify:
             print 'Confirm ' + other_name + ' has identity key fingerprint:\n'
-            fingerprint = hashlib.sha224(other_identityKey).hexdigest().upper()
+            fingerprint = hash_(other_identityKey).encode('hex').upper()
             fprint = ''
             for i in range(0, len(fingerprint), 4):
                 fprint += fingerprint[i:i+2] + ':'
@@ -323,8 +297,12 @@ class Axolotl:
             for row in rows:
                 msg1 = msg[:HEADER_LEN-pad_length]
                 msg2 = msg[HEADER_LEN:]
-                header = decrypt_symmetric(a2b(row['hkr']), msg1)
-                body = decrypt_symmetric(a2b(row['mk']), msg2)
+                try:
+                    header = decrypt_symmetric(a2b(row['hkr']), msg1)
+                    body = decrypt_symmetric(a2b(row['mk']), msg2)
+                except CryptoError:
+                    header = ''
+                    body = ''
                 if header != '' and body != '':
                     cur.execute('''
                         DELETE FROM
@@ -356,16 +334,23 @@ class Axolotl:
 
         header = None
         if self.state['HKr']:
-            header = decrypt_symmetric(self.state['HKr'], msg1)
+            try:
+                header = decrypt_symmetric(self.state['HKr'], msg1)
+            except CryptoError:
+                pass
         if header and header != '':
             Np = int(header[:HEADER_COUNT_NUM_LEN])
             CKp, mk = self.stageSkippedMK(self.state['HKr'], self.state['Nr'], Np, self.state['CKr'])
-            body = decrypt_symmetric(mk, msg[HEADER_LEN:])
-            if not body or body == '':
+            try:
+                body = decrypt_symmetric(mk, msg[HEADER_LEN:])
+            except CryptoError:
                 print 'Undecipherable message'
                 sys.exit(1)
         else:
-            header = decrypt_symmetric(self.state['NHKr'], msg1)
+            try:
+                header = decrypt_symmetric(self.state['NHKr'], msg1)
+            except CryptoError:
+                pass
             if self.state['ratchet_flag'] or not header or header == '':
                 print 'Undecipherable message'
                 sys.exit(1)
@@ -379,7 +364,10 @@ class Axolotl:
             NHKp = kdf(RKp, SALTS['NHK'][not self.mode])
             CKp = kdf(RKp, SALTS['CK'][not self.mode])
             CKp, mk = self.stageSkippedMK(HKp, 0, Np, CKp)
-            body = decrypt_symmetric(mk, msg[HEADER_LEN:])
+            try:
+                body = decrypt_symmetric(mk, msg[HEADER_LEN:])
+            except CryptoError:
+                pass
             if not body or body == '':
                 print 'Undecipherable message'
                 sys.exit(1)
@@ -424,7 +412,7 @@ class Axolotl:
 
     def printKeys(self):
         print 'Your Identity key is:\n' + b2a(self.state['DHIs'])
-        fingerprint = hashlib.sha224(self.state['DHIs']).hexdigest().upper()
+        fingerprint = hash_(self.state['DHIs']).encode('hex').upper()
         fprint = ''
         for i in range(0, len(fingerprint), 4):
             fprint += fingerprint[i:i+2] + ':'
@@ -555,9 +543,11 @@ class Axolotl:
         try:
             with open(self.dbname, 'rb') as f:
                 if self.dbpassphrase is not None:
-                    sql = gpg.decrypt_file(f, passphrase=self.dbpassphrase)
+                    ciphertext = f.read()
+                    box = nacl.secret.SecretBox(self.dbpassphrase)
+                    sql = box.decrypt(ciphertext)
                     if sql and sql != '':
-                        db.cursor().executescript(sql.data)
+                        db.cursor().executescript(sql)
                         return db
                     else:
                         print 'Bad passphrase!'
@@ -574,11 +564,13 @@ class Axolotl:
         sql = ''
         for item in self.db.iterdump():
             sql = sql+item+'\n'
+            sql = bytes(sql)
         if self.dbpassphrase is not None:
-            crypt_sql = gpg.encrypt(sql, recipients=None, symmetric='AES256', armor=False,
-                                always_trust=True, passphrase=self.dbpassphrase)
+            box = nacl.secret.SecretBox(self.dbpassphrase)
+            nonce = nacl.utils.random(nacl.secret.SecretBox.NONCE_SIZE)
+            crypt_sql = box.encrypt(sql, nonce)
             with open(self.dbname, 'wb') as f:
-                f.write(crypt_sql.data)
+                f.write(crypt_sql)
         else:
             with open(self.dbname, 'w') as f:
                 f.write(sql)
@@ -613,7 +605,7 @@ class Axolotl:
 
 
 def hash_(data):
-    return hashlib.sha256(data).digest()
+    return sha256(data).decode('hex')
 
 
 def kdf(secret, salt):
@@ -621,15 +613,16 @@ def kdf(secret, salt):
 
 
 def generate_keypair():
-    key = keys.Private()
-    privkey = key.serialize()
-    pubkey = key.get_public().serialize()
-    return privkey, pubkey
+    privkey = PrivateKey.generate()
+    pubkey = privkey.public_key
+    return privkey._private_key, pubkey._public_key
 
 
 def generate_dh(a, b):
-    key = keys.Private(secret=a)
-    return key.get_shared_key(keys.Public(b))
+    a = PrivateKey(a)
+    b = PublicKey(b)
+    key = Box(a, b)
+    return key._shared_key
 
 
 def generate_3dh(a, a0, b, b0, mode=ALICE_MODE):
@@ -644,14 +637,11 @@ def generate_3dh(a, a0, b, b0, mode=ALICE_MODE):
 
 
 def encrypt_symmetric(key, plaintext):
-    key = binascii.hexlify(key)
-    msg = gpg.encrypt(plaintext, recipients=None, symmetric=GPG_CIPHER,
-                      armor=False, always_trust=True, passphrase=key)
-    return msg.data[len(GPG_HEADER):]
+    nonce = nacl.utils.random(nacl.secret.SecretBox.NONCE_SIZE)
+    box = nacl.secret.SecretBox(key)
+    return nonce + box.encrypt(plaintext, nonce).ciphertext
 
 
 def decrypt_symmetric(key, ciphertext):
-    key = binascii.hexlify(key)
-    msg = gpg.decrypt(GPG_HEADER + ciphertext, passphrase=key,
-                      always_trust=True)
-    return msg.data
+    box = nacl.secret.SecretBox(key)
+    return box.decrypt(ciphertext)

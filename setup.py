@@ -21,9 +21,8 @@ setup(
         'pyaxo'
     ],
     install_requires=[
-        'curve25519-donna>=1.3',
         'passlib>=1.6.1',
-        'python-gnupg>=0.3.5',
+        'pynacl>=1.0.1',
     ],
     data_files=[
         (BASE_DIRECTORY + '/examples', glob('examples/*')),
