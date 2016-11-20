@@ -410,10 +410,10 @@ class SqlitePersistence(object):
             try:
                 if self.dbpassphrase is not None:
                     with open(self.dbname, 'rb') as f:
-                        ciphertext = f.read()
-                        box = nacl.secret.SecretBox(self.dbpassphrase)
+                        crypt_sql = f.read()
                         try:
-                            sql = box.decrypt(ciphertext)
+                            sql = decrypt_symmetric(self.dbpassphrase,
+                                                    crypt_sql)
                         except CryptoError:
                             print 'Bad passphrase!'
                             sys.exit(1)
@@ -484,9 +484,7 @@ class SqlitePersistence(object):
         with self.db as db:
             sql = bytes('\n'.join(db.iterdump()))
             if self.dbpassphrase is not None:
-                box = nacl.secret.SecretBox(self.dbpassphrase)
-                nonce = nacl.utils.random(nacl.secret.SecretBox.NONCE_SIZE)
-                crypt_sql = box.encrypt(sql, nonce)
+                crypt_sql = encrypt_symmetric(self.dbpassphrase, sql)
                 with open(self.dbname, 'wb') as f:
                     f.write(crypt_sql)
             else:
