@@ -65,7 +65,7 @@ class Axolotl(object):
             self.dbpassphrase = hash_(dbpassphrase)
         else:
             self.dbpassphrase = getpass('Database passphrase for '+ self.name + ': ').strip()
-        self.conversation = AxolotlConversation(self, state=dict(), mode=None)
+        self.conversation = AxolotlConversation(self, keys=dict(), mode=None)
         self.state['DHIs_priv'], self.state['DHIs'] = generate_keypair()
         self.state['DHRs_priv'], self.state['DHRs'] = generate_keypair()
         self.handshakeKey, self.handshakePKey = generate_keypair()
@@ -79,11 +79,11 @@ class Axolotl(object):
 
     @property
     def state(self):
-        return self.conversation.state
+        return self.conversation.keys
 
     @state.setter
     def state(self, state):
-        self.conversation.state = state
+        self.conversation.keys = state
 
     @property
     def mode(self):
@@ -219,7 +219,7 @@ class Axolotl(object):
         CONVid = kdf(mkey, SALTS['CONVid'])
         DHIr = other_identity_key
 
-        state = \
+        keys = \
                { 'name': self.name,
                  'other_name': other_name,
                  'RK': RK,
@@ -242,7 +242,7 @@ class Axolotl(object):
                  'ratchet_flag': ratchet_flag,
                }
 
-        return AxolotlConversation(self, state, mode)
+        return AxolotlConversation(self, keys, mode)
 
     def encrypt(self, plaintext):
         return self.conversation.encrypt(plaintext)
@@ -255,12 +255,11 @@ class Axolotl(object):
 
     def commit_skipped_mk(self, conversation):
         self.persistence.commit_skipped_mk(conversation.staged_hk_mk,
-                                           conversation.state)
+                                           conversation.keys)
 
     def try_skipped_mk(self, msg, pad_length, conversation):
         return self.persistence.try_skipped_mk(
-            msg, pad_length,
-            conversation.state['name'], conversation.state['other_name'])
+            msg, pad_length, conversation.name, conversation.other_name)
 
     def decrypt(self, msg):
         return self.conversation.decrypt(msg)
@@ -284,7 +283,7 @@ class Axolotl(object):
         self.save_conversation(self.conversation)
 
     def save_conversation(self, conversation):
-        self.persistence.save_state(conversation.state, conversation.mode)
+        self.persistence.save_state(conversation.keys, conversation.mode)
 
     def loadState(self, name, other_name):
         self.persistence.db = self.openDB()
@@ -295,8 +294,8 @@ class Axolotl(object):
             return False
 
     def load_conversation(self, name, other_name):
-        state, mode = self.persistence.load_state(name, other_name)
-        return AxolotlConversation(self, state, mode)
+        keys, mode = self.persistence.load_state(name, other_name)
+        return AxolotlConversation(self, keys, mode)
 
     def openDB(self):
         return self.persistence._open_db()
@@ -309,38 +308,86 @@ class Axolotl(object):
 
 
 class AxolotlConversation:
-    def __init__(self, axolotl, state, mode):
+    def __init__(self, axolotl, keys, mode):
         self._axolotl = axolotl
-        self.state = state
+        self.keys = keys
         self.mode = mode
         self.staged_hk_mk = dict()
 
         self.handshake_key = None
         self.handshake_pkey = None
 
+    @property
+    def name(self):
+        return self.keys['name']
+
+    @name.setter
+    def name(self, name):
+        self.keys['name'] = name
+
+    @property
+    def other_name(self):
+        return self.keys['other_name']
+
+    @other_name.setter
+    def other_name(self, other_name):
+        self.keys['other_name'] = other_name
+
+    @property
+    def ns(self):
+        return self.keys['Ns']
+
+    @ns.setter
+    def ns(self, ns):
+        self.keys['Ns'] = ns
+
+    @property
+    def nr(self):
+        return self.keys['Nr']
+
+    @nr.setter
+    def nr(self, nr):
+        self.keys['Nr'] = nr
+
+    @property
+    def pns(self):
+        return self.keys['PNs']
+
+    @pns.setter
+    def pns(self, pns):
+        self.keys['PNs'] = pns
+
+    @property
+    def ratchet_flag(self):
+        return self.keys['ratchet_flag']
+
+    @ratchet_flag.setter
+    def ratchet_flag(self, ratchet_flag):
+        self.keys['ratchet_flag'] = ratchet_flag
+
     def encrypt(self, plaintext):
-        if self.state['ratchet_flag']:
-            self.state['DHRs_priv'], self.state['DHRs'] = generate_keypair()
-            self.state['HKs'] = self.state['NHKs']
-            self.state['RK'] = hash_(self.state['RK'] +
-                                     generate_dh(self.state['DHRs_priv'], self.state['DHRr']))
-            self.state['NHKs'] = kdf(self.state['RK'], SALTS['NHK'][self.mode])
-            self.state['CKs'] = kdf(self.state['RK'], SALTS['CK'][self.mode])
-            self.state['PNs'] = self.state['Ns']
-            self.state['Ns'] = 0
-            self.state['ratchet_flag'] = False
-        mk = hash_(self.state['CKs'] + '0')
+        if self.ratchet_flag:
+            self.keys['DHRs_priv'], self.keys['DHRs'] = generate_keypair()
+            self.keys['HKs'] = self.keys['NHKs']
+            self.keys['RK'] = hash_(self.keys['RK'] +
+                                    generate_dh(self.keys['DHRs_priv'], self.keys['DHRr']))
+            self.keys['NHKs'] = kdf(self.keys['RK'], SALTS['NHK'][self.mode])
+            self.keys['CKs'] = kdf(self.keys['RK'], SALTS['CK'][self.mode])
+            self.pns = self.ns
+            self.ns = 0
+            self.ratchet_flag = False
+        mk = hash_(self.keys['CKs'] + '0')
         msg1 = encrypt_symmetric(
-            self.state['HKs'],
-            str(self.state['Ns']).zfill(HEADER_COUNT_NUM_LEN) +
-            str(self.state['PNs']).zfill(HEADER_COUNT_NUM_LEN) +
-            self.state['DHRs'])
+            self.keys['HKs'],
+            str(self.ns).zfill(HEADER_COUNT_NUM_LEN) +
+            str(self.pns).zfill(HEADER_COUNT_NUM_LEN) +
+            self.keys['DHRs'])
         msg2 = encrypt_symmetric(mk, plaintext)
         pad_length = HEADER_LEN - len(msg1)
         pad = os.urandom(pad_length - HEADER_PAD_NUM_LEN) + chr(pad_length)
         msg = msg1 + pad + msg2
-        self.state['Ns'] += 1
-        self.state['CKs'] = hash_(self.state['CKs'] + '1')
+        self.ns += 1
+        self.keys['CKs'] = hash_(self.keys['CKs'] + '1')
         return msg
 
     def decrypt(self, msg):
@@ -353,14 +400,14 @@ class AxolotlConversation:
             return body
 
         header = None
-        if self.state['HKr']:
+        if self.keys['HKr']:
             try:
-                header = decrypt_symmetric(self.state['HKr'], msg1)
+                header = decrypt_symmetric(self.keys['HKr'], msg1)
             except CryptoError:
                 pass
         if header and header != '':
             Np = int(header[:HEADER_COUNT_NUM_LEN])
-            CKp, mk = self.stage_skipped_mk(self.state['HKr'], self.state['Nr'], Np, self.state['CKr'])
+            CKp, mk = self.stage_skipped_mk(self.keys['HKr'], self.nr, Np, self.keys['CKr'])
             try:
                 body = decrypt_symmetric(mk, msg[HEADER_LEN:])
             except CryptoError:
@@ -368,19 +415,19 @@ class AxolotlConversation:
                 sys.exit(1)
         else:
             try:
-                header = decrypt_symmetric(self.state['NHKr'], msg1)
+                header = decrypt_symmetric(self.keys['NHKr'], msg1)
             except CryptoError:
                 pass
-            if self.state['ratchet_flag'] or not header or header == '':
+            if self.ratchet_flag or not header or header == '':
                 print 'Undecipherable message'
                 sys.exit(1)
             Np = int(header[:HEADER_COUNT_NUM_LEN])
             PNp = int(header[HEADER_COUNT_NUM_LEN:HEADER_COUNT_NUM_LEN*2])
             DHRp = header[HEADER_COUNT_NUM_LEN*2:]
-            if self.state['CKr']:
-                self.stage_skipped_mk(self.state['HKr'], self.state['Nr'], PNp, self.state['CKr'])
-            HKp = self.state['NHKr']
-            RKp = hash_(self.state['RK'] + generate_dh(self.state['DHRs_priv'], DHRp))
+            if self.keys['CKr']:
+                self.stage_skipped_mk(self.keys['HKr'], self.nr, PNp, self.keys['CKr'])
+            HKp = self.keys['NHKr']
+            RKp = hash_(self.keys['RK'] + generate_dh(self.keys['DHRs_priv'], DHRp))
             NHKp = kdf(RKp, SALTS['NHK'][not self.mode])
             CKp = kdf(RKp, SALTS['CK'][not self.mode])
             CKp, mk = self.stage_skipped_mk(HKp, 0, Np, CKp)
@@ -391,16 +438,16 @@ class AxolotlConversation:
             if not body or body == '':
                 print 'Undecipherable message'
                 sys.exit(1)
-            self.state['RK'] = RKp
-            self.state['HKr'] = HKp
-            self.state['NHKr'] = NHKp
-            self.state['DHRr'] = DHRp
-            self.state['DHRs_priv'] = None
-            self.state['DHRs'] = None
-            self.state['ratchet_flag'] = True
+            self.keys['RK'] = RKp
+            self.keys['HKr'] = HKp
+            self.keys['NHKr'] = NHKp
+            self.keys['DHRr'] = DHRp
+            self.keys['DHRs_priv'] = None
+            self.keys['DHRs'] = None
+            self.ratchet_flag = True
         self.commit_skipped_mk()
-        self.state['Nr'] = Np + 1
-        self.state['CKr'] = CKp
+        self.nr = Np + 1
+        self.keys['CKr'] = CKp
         return body
 
     def try_skipped_mk(self, msg, pad_length):
@@ -450,14 +497,14 @@ class AxolotlConversation:
         self._axolotl.save_conversation(self)
 
     def print_keys(self):
-        print 'Your Identity key is:\n' + b2a(self.state['DHIs'])
-        fingerprint = hash_(self.state['DHIs']).encode('hex').upper()
+        print 'Your Identity key is:\n' + b2a(self.keys['DHIs'])
+        fingerprint = hash_(self.keys['DHIs']).encode('hex').upper()
         fprint = ''
         for i in range(0, len(fingerprint), 4):
             fprint += fingerprint[i:i+2] + ':'
         print 'Your identity key fingerprint is: '
         print fprint[:-1] + '\n'
-        print 'Your Ratchet key is:\n' + b2a(self.state['DHRs'])
+        print 'Your Ratchet key is:\n' + b2a(self.keys['DHRs'])
         if self.handshake_key:
             print 'Your Handshake key is:\n' + b2a(self.handshake_pkey)
         else:
@@ -467,25 +514,25 @@ class AxolotlConversation:
         print
         print 'Warning: saving this data to disk is insecure!'
         print
-        for key in sorted(self.state):
+        for key in sorted(self.keys):
              if 'priv' in key:
                  pass
              else:
-                 if self.state[key] is None:
+                 if self.keys[key] is None:
                      print key + ': None'
-                 elif type(self.state[key]) is bool:
-                     if self.state[key]:
+                 elif type(self.keys[key]) is bool:
+                     if self.keys[key]:
                          print key + ': True'
                      else:
                          print key + ': False'
-                 elif type(self.state[key]) is str:
+                 elif type(self.keys[key]) is str:
                      try:
-                         self.state[key].decode('ascii')
-                         print key + ': ' + self.state[key]
+                         self.keys[key].decode('ascii')
+                         print key + ': ' + self.keys[key]
                      except UnicodeDecodeError:
-                         print key + ': ' + b2a(self.state[key]).strip()
+                         print key + ': ' + b2a(self.keys[key]).strip()
                  else:
-                     print key + ': ' + str(self.state[key])
+                     print key + ': ' + str(self.keys[key])
         if self.mode is ALICE_MODE:
             print 'Mode: Alice'
         else:
