@@ -65,9 +65,7 @@ class Axolotl(object):
             self.dbpassphrase = hash_(dbpassphrase)
         else:
             self.dbpassphrase = getpass('Database passphrase for '+ self.name + ': ').strip()
-        self.mode = None
-        self.staged_HK_mk = {}
-        self.state = {}
+        self.conversation = AxolotlConversation(self, state=dict(), mode=None)
         self.state['DHIs_priv'], self.state['DHIs'] = generate_keypair()
         self.state['DHRs_priv'], self.state['DHRs'] = generate_keypair()
         self.handshakeKey, self.handshakePKey = generate_keypair()
@@ -76,7 +74,24 @@ class Axolotl(object):
                                              self.dbpassphrase,
                                              self.storeTime,
                                              self.nonthreaded_sql)
-        self.commitSkippedMK()
+
+        self.commit_skipped_mk(self.conversation)
+
+    @property
+    def state(self):
+        return self.conversation.state
+
+    @state.setter
+    def state(self, state):
+        self.conversation.state = state
+
+    @property
+    def mode(self):
+        return self.conversation.mode
+
+    @mode.setter
+    def mode(self, mode):
+        self.conversation.mode = mode
 
     @property
     def db(self):
@@ -113,16 +128,41 @@ class Axolotl(object):
             if ans != 'y':
                 print 'Key fingerprint not confirmed - exiting...'
                 sys.exit()
-        if self.state['DHIs'] < other_identityKey:
-            self.mode = ALICE_MODE
-        else:
-            self.mode = BOB_MODE
-        mkey = self.tripleDH(self.state['DHIs_priv'], self.handshakeKey,
-                             other_identityKey, other_handshakeKey)
 
-        self.createState(other_name, mkey,
-                         other_identityKey=other_identityKey,
-                         other_ratchetKey=other_ratchetKey)
+        self.conversation = self.init_conversation(other_name,
+                                                   self.state['DHIs_priv'],
+                                                   self.state['DHIs'],
+                                                   self.handshakeKey,
+                                                   other_identityKey,
+                                                   other_handshakeKey,
+                                                   self.state['DHRs_priv'],
+                                                   self.state['DHRs'],
+                                                   other_ratchetKey)
+
+    def init_conversation(self, other_name,
+                          priv_identity_key, identity_key, priv_handshake_key,
+                          other_identity_key, other_handshake_key,
+                          priv_ratchet_key=None, ratchet_key=None,
+                          other_ratchet_key=None, mode=None):
+        if mode is None:
+            if identity_key < other_identity_key:
+                mode = ALICE_MODE
+            else:
+                mode = BOB_MODE
+
+        mkey = generate_3dh(priv_identity_key, priv_handshake_key,
+                            other_identity_key, other_handshake_key,
+                            mode)
+
+        return self.create_conversation(other_name,
+                                        mkey,
+                                        mode,
+                                        priv_identity_key,
+                                        identity_key,
+                                        other_identity_key,
+                                        priv_ratchet_key,
+                                        ratchet_key,
+                                        other_ratchet_key)
 
     def createState(self, other_name, mkey, mode=None, other_identityKey=None, other_ratchetKey=None):
         if mode is not None:
@@ -130,14 +170,33 @@ class Axolotl(object):
         else:
             if self.mode is None: # mode not selected
                 sys.exit(1)
-        if self.mode is ALICE_MODE:
+
+        self.conversation = self.create_conversation(other_name,
+                                                     mkey,
+                                                     self.mode,
+                                                     self.state['DHIs_priv'],
+                                                     self.state['DHIs'],
+                                                     other_identityKey,
+                                                     self.state['DHRs_priv'],
+                                                     self.state['DHRs'],
+                                                     other_ratchetKey)
+
+        self.ratchetKey = False
+        self.ratchetPKey = False
+
+    def create_conversation(self, other_name, mkey, mode,
+                            priv_identity_key, identity_key,
+                            other_identity_key,
+                            priv_ratchet_key=None, ratchet_key=None,
+                            other_ratchet_key=None):
+        if mode is ALICE_MODE:
             HKs = None
             HKr = kdf(mkey, SALTS['HK'][BOB_MODE])
             CKs = None
             CKr = kdf(mkey, SALTS['CK'][BOB_MODE])
             DHRs_priv = None
             DHRs = None
-            DHRr = other_ratchetKey
+            DHRr = other_ratchet_key
             Ns = 0
             Nr = 0
             PNs = 0
@@ -147,20 +206,20 @@ class Axolotl(object):
             HKr = None
             CKs = kdf(mkey, SALTS['CK'][BOB_MODE])
             CKr = None
-            DHRs_priv = self.state['DHRs_priv']
-            DHRs = self.state['DHRs']
+            DHRs_priv = priv_ratchet_key
+            DHRs = ratchet_key
             DHRr = None
             Ns = 0
             Nr = 0
             PNs = 0
             ratchet_flag = False
         RK = kdf(mkey, SALTS['RK'])
-        NHKs = kdf(mkey, SALTS['NHK'][self.mode])
-        NHKr = kdf(mkey, SALTS['NHK'][not self.mode])
+        NHKs = kdf(mkey, SALTS['NHK'][mode])
+        NHKr = kdf(mkey, SALTS['NHK'][not mode])
         CONVid = kdf(mkey, SALTS['CONVid'])
-        DHIr = other_identityKey
+        DHIr = other_identity_key
 
-        self.state = \
+        state = \
                { 'name': self.name,
                  'other_name': other_name,
                  'RK': RK,
@@ -170,8 +229,8 @@ class Axolotl(object):
                  'NHKr': NHKr,
                  'CKs': CKs,
                  'CKr': CKr,
-                 'DHIs_priv': self.state['DHIs_priv'],
-                 'DHIs': self.state['DHIs'],
+                 'DHIs_priv': priv_identity_key,
+                 'DHIs': identity_key,
                  'DHIr': DHIr,
                  'DHRs_priv': DHRs_priv,
                  'DHRs': DHRs,
@@ -183,8 +242,81 @@ class Axolotl(object):
                  'ratchet_flag': ratchet_flag,
                }
 
-        self.ratchetKey = False
-        self.ratchetPKey = False
+        return AxolotlConversation(self, state, mode)
+
+    def encrypt(self, plaintext):
+        return self.conversation.encrypt(plaintext)
+
+    def enc(self, key, plaintext):
+        return encrypt_symmetric(key, plaintext)
+
+    def dec(self, key, encrypted):
+        return decrypt_symmetric(key, encrypted)
+
+    def commit_skipped_mk(self, conversation):
+        self.persistence.commit_skipped_mk(conversation.staged_hk_mk,
+                                           conversation.state)
+
+    def try_skipped_mk(self, msg, pad_length, conversation):
+        return self.persistence.try_skipped_mk(
+            msg, pad_length,
+            conversation.state['name'], conversation.state['other_name'])
+
+    def decrypt(self, msg):
+        return self.conversation.decrypt(msg)
+
+    def encrypt_file(self, filename):
+        self.conversation.encrypt_file(filename)
+
+    def decrypt_file(self, filename):
+        self.conversation.decrypt_file(filename)
+
+    def encrypt_pipe(self):
+        self.conversation.encrypt_pipe()
+
+    def decrypt_pipe(self):
+        self.conversation.decrypt_pipe()
+
+    def printKeys(self):
+        self.conversation.print_keys()
+
+    def saveState(self):
+        self.save_conversation(self.conversation)
+
+    def save_conversation(self, conversation):
+        self.persistence.save_state(conversation.state, conversation.mode)
+
+    def loadState(self, name, other_name):
+        self.persistence.db = self.openDB()
+        self.conversation = self.load_conversation(name, other_name)
+        if self.conversation:
+            return
+        else:
+            return False
+
+    def load_conversation(self, name, other_name):
+        state, mode = self.persistence.load_state(name, other_name)
+        return AxolotlConversation(self, state, mode)
+
+    def openDB(self):
+        return self.persistence._open_db()
+
+    def writeDB(self):
+        self.persistence.write_db()
+
+    def printState(self):
+        self.conversation.print_state()
+
+
+class AxolotlConversation:
+    def __init__(self, axolotl, state, mode):
+        self._axolotl = axolotl
+        self.state = state
+        self.mode = mode
+        self.staged_hk_mk = dict()
+
+        self.handshake_key = None
+        self.handshake_pkey = None
 
     def encrypt(self, plaintext):
         if self.state['ratchet_flag']:
@@ -211,37 +343,12 @@ class Axolotl(object):
         self.state['CKs'] = hash_(self.state['CKs'] + '1')
         return msg
 
-
-    def enc(self, key, plaintext):
-        return encrypt_symmetric(key, plaintext)
-
-    def dec(self, key, encrypted):
-        return decrypt_symmetric(key, encrypted)
-
-    def commitSkippedMK(self):
-        self.persistence.commit_skipped_mk(self.staged_HK_mk, self.state)
-
-    def trySkippedMK(self, msg, pad_length, name, other_name):
-        return self.persistence.try_skipped_mk(msg, pad_length, name,
-                                               other_name)
-
-    def stageSkippedMK(self, HKr, Nr, Np, CKr):
-        CKp = CKr
-        for i in range(Np - Nr):
-            mk = hash_(CKp + '0')
-            CKp = hash_(CKp + '1')
-            self.staged_HK_mk[mk] = HKr
-        mk = hash_(CKp + '0')
-        CKp = hash_(CKp + '1')
-        return CKp, mk
-
     def decrypt(self, msg):
         pad = msg[HEADER_LEN-HEADER_PAD_NUM_LEN:HEADER_LEN]
         pad_length = ord(pad)
         msg1 = msg[:HEADER_LEN-pad_length]
 
-        body = self.trySkippedMK(msg, pad_length, self.state['name'],
-                                      self.state['other_name'])
+        body = self.try_skipped_mk(msg, pad_length)
         if body and body != '':
             return body
 
@@ -253,7 +360,7 @@ class Axolotl(object):
                 pass
         if header and header != '':
             Np = int(header[:HEADER_COUNT_NUM_LEN])
-            CKp, mk = self.stageSkippedMK(self.state['HKr'], self.state['Nr'], Np, self.state['CKr'])
+            CKp, mk = self.stage_skipped_mk(self.state['HKr'], self.state['Nr'], Np, self.state['CKr'])
             try:
                 body = decrypt_symmetric(mk, msg[HEADER_LEN:])
             except CryptoError:
@@ -271,12 +378,12 @@ class Axolotl(object):
             PNp = int(header[HEADER_COUNT_NUM_LEN:HEADER_COUNT_NUM_LEN*2])
             DHRp = header[HEADER_COUNT_NUM_LEN*2:]
             if self.state['CKr']:
-                self.stageSkippedMK(self.state['HKr'], self.state['Nr'], PNp, self.state['CKr'])
+                self.stage_skipped_mk(self.state['HKr'], self.state['Nr'], PNp, self.state['CKr'])
             HKp = self.state['NHKr']
             RKp = hash_(self.state['RK'] + generate_dh(self.state['DHRs_priv'], DHRp))
             NHKp = kdf(RKp, SALTS['NHK'][not self.mode])
             CKp = kdf(RKp, SALTS['CK'][not self.mode])
-            CKp, mk = self.stageSkippedMK(HKp, 0, Np, CKp)
+            CKp, mk = self.stage_skipped_mk(HKp, 0, Np, CKp)
             try:
                 body = decrypt_symmetric(mk, msg[HEADER_LEN:])
             except CryptoError:
@@ -291,10 +398,26 @@ class Axolotl(object):
             self.state['DHRs_priv'] = None
             self.state['DHRs'] = None
             self.state['ratchet_flag'] = True
-        self.commitSkippedMK()
+        self.commit_skipped_mk()
         self.state['Nr'] = Np + 1
         self.state['CKr'] = CKp
         return body
+
+    def try_skipped_mk(self, msg, pad_length):
+        return self._axolotl.try_skipped_mk(msg, pad_length, self)
+
+    def stage_skipped_mk(self, hkr, nr, np, ckr):
+        ckp = ckr
+        for i in range(np - nr):
+            mk = hash_(ckp + '0')
+            ckp = hash_(ckp + '1')
+            self.staged_hk_mk[mk] = hkr
+        mk = hash_(ckp + '0')
+        ckp = hash_(ckp + '1')
+        return ckp, mk
+
+    def commit_skipped_mk(self):
+        self._axolotl.commit_skipped_mk(self)
 
     def encrypt_file(self, filename):
         with open(filename, 'r') as f:
@@ -323,7 +446,10 @@ class Axolotl(object):
         sys.stdout.write(plaintext)
         sys.stdout.flush()
 
-    def printKeys(self):
+    def save(self):
+        self._axolotl.save_conversation(self)
+
+    def print_keys(self):
         print 'Your Identity key is:\n' + b2a(self.state['DHIs'])
         fingerprint = hash_(self.state['DHIs']).encode('hex').upper()
         fprint = ''
@@ -332,32 +458,12 @@ class Axolotl(object):
         print 'Your identity key fingerprint is: '
         print fprint[:-1] + '\n'
         print 'Your Ratchet key is:\n' + b2a(self.state['DHRs'])
-        if self.handshakeKey:
-            print 'Your Handshake key is:\n' + b2a(self.handshakePKey)
+        if self.handshake_key:
+            print 'Your Handshake key is:\n' + b2a(self.handshake_pkey)
         else:
             print 'Your Handshake key is not available'
 
-    def saveState(self):
-        self.persistence.save_state(self.state, self.mode)
-
-    def loadState(self, name, other_name):
-        self.persistence.db = self.openDB()
-        result = self.persistence.load_state(name, other_name)
-        if result:
-            self.name = name
-            self.state = result[0]
-            self.mode = result[1]
-            return
-        else:
-            return False
-
-    def openDB(self):
-        return self.persistence._open_db()
-
-    def writeDB(self):
-        self.persistence.write_db()
-
-    def printState(self):
+    def print_state(self):
         print
         print 'Warning: saving this data to disk is insecure!'
         print
