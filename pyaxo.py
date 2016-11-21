@@ -254,12 +254,10 @@ class Axolotl(object):
         return decrypt_symmetric(key, encrypted)
 
     def commit_skipped_mk(self, conversation):
-        self.persistence.commit_skipped_mk(conversation.staged_hk_mk,
-                                           conversation.keys)
+        self.persistence.commit_skipped_mk(conversation)
 
     def try_skipped_mk(self, msg, pad_length, conversation):
-        return self.persistence.try_skipped_mk(
-            msg, pad_length, conversation.name, conversation.other_name)
+        return self.persistence.try_skipped_mk(msg, pad_length, conversation)
 
     def decrypt(self, msg):
         return self.conversation.decrypt(msg)
@@ -283,7 +281,7 @@ class Axolotl(object):
         self.save_conversation(self.conversation)
 
     def save_conversation(self, conversation):
-        self.persistence.save_state(conversation.keys, conversation.mode)
+        self.persistence.save_conversation(conversation)
 
     def loadState(self, name, other_name):
         self.persistence.db = self.openDB()
@@ -294,8 +292,7 @@ class Axolotl(object):
             return False
 
     def load_conversation(self, name, other_name):
-        keys, mode = self.persistence.load_state(name, other_name)
-        return AxolotlConversation(self, keys, mode)
+        return self.persistence.load_conversation(self, name, other_name)
 
     def openDB(self):
         return self.persistence._open_db()
@@ -644,10 +641,10 @@ class SqlitePersistence(object):
                 with open(self.dbname, 'w') as f:
                     f.write(sql)
 
-    def commit_skipped_mk(self, staged_hk_mk, state):
+    def commit_skipped_mk(self, conversation):
         timestamp = int(time())
         with self.db as db:
-            for mk, hkr in staged_hk_mk.iteritems():
+            for mk, hkr in conversation.staged_hk_mk.iteritems():
                 db.execute('''
                     REPLACE INTO
                         skipped_mk (
@@ -657,8 +654,8 @@ class SqlitePersistence(object):
                             mk,
                             timestamp)
                     VALUES (?, ?, ?, ?, ?)''', (
-                        state['name'],
-                        state['other_name'],
+                        conversation.name,
+                        conversation.other_name,
                         b2a(hkr).strip(),
                         b2a(mk).strip(),
                         timestamp))
@@ -669,7 +666,7 @@ class SqlitePersistence(object):
                 WHERE
                     timestamp < ?''', (rowtime,))
 
-    def try_skipped_mk(self, msg, pad_length, name, other_name):
+    def try_skipped_mk(self, msg, pad_length, conversation):
         with self.db as db:
             rows = db.execute('''
                 SELECT
@@ -678,7 +675,9 @@ class SqlitePersistence(object):
                     skipped_mk
                 WHERE
                     my_identity = ? AND
-                    to_identity = ?''', (name, other_name))
+                    to_identity = ?''', (
+                        conversation.name,
+                        conversation.other_name))
         for row in rows:
             msg1 = msg[:HEADER_LEN-pad_length]
             msg2 = msg[HEADER_LEN:]
@@ -698,17 +697,17 @@ class SqlitePersistence(object):
                 return body
         return None
 
-    def save_state(self, state, mode):
-        HKs = 0 if state['HKs'] is None else b2a(state['HKs']).strip()
-        HKr = 0 if state['HKr'] is None else b2a(state['HKr']).strip()
-        CKs = 0 if state['CKs'] is None else b2a(state['CKs']).strip()
-        CKr = 0 if state['CKr'] is None else b2a(state['CKr']).strip()
-        DHIr = 0 if state['DHIr'] is None else b2a(state['DHIr']).strip()
-        DHRs_priv = 0 if state['DHRs_priv'] is None else b2a(state['DHRs_priv']).strip()
-        DHRs = 0 if state['DHRs'] is None else b2a(state['DHRs']).strip()
-        DHRr = 0 if state['DHRr'] is None else b2a(state['DHRr']).strip()
-        ratchet_flag = 1 if state['ratchet_flag'] else 0
-        mode = 1 if mode else 0
+    def save_conversation(self, conversation):
+        HKs = 0 if conversation.keys['HKs'] is None else b2a(conversation.keys['HKs']).strip()
+        HKr = 0 if conversation.keys['HKr'] is None else b2a(conversation.keys['HKr']).strip()
+        CKs = 0 if conversation.keys['CKs'] is None else b2a(conversation.keys['CKs']).strip()
+        CKr = 0 if conversation.keys['CKr'] is None else b2a(conversation.keys['CKr']).strip()
+        DHIr = 0 if conversation.keys['DHIr'] is None else b2a(conversation.keys['DHIr']).strip()
+        DHRs_priv = 0 if conversation.keys['DHRs_priv'] is None else b2a(conversation.keys['DHRs_priv']).strip()
+        DHRs = 0 if conversation.keys['DHRs'] is None else b2a(conversation.keys['DHRs']).strip()
+        DHRr = 0 if conversation.keys['DHRr'] is None else b2a(conversation.keys['DHRr']).strip()
+        ratchet_flag = 1 if conversation.ratchet_flag else 0
+        mode = 1 if conversation.mode else 0
         with self.db as db:
             db.execute('''
                 REPLACE INTO
@@ -736,30 +735,30 @@ class SqlitePersistence(object):
                         mode)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                         ?, ?, ?)''', (
-                    state['name'],
-                    state['other_name'],
-                    b2a(state['RK']).strip(),
+                    conversation.name,
+                    conversation.other_name,
+                    b2a(conversation.keys['RK']).strip(),
                     HKs,
                     HKr,
-                    b2a(state['NHKs']).strip(),
-                    b2a(state['NHKr']).strip(),
+                    b2a(conversation.keys['NHKs']).strip(),
+                    b2a(conversation.keys['NHKr']).strip(),
                     CKs,
                     CKr,
-                    b2a(state['DHIs_priv']).strip(),
-                    b2a(state['DHIs']).strip(),
+                    b2a(conversation.keys['DHIs_priv']).strip(),
+                    b2a(conversation.keys['DHIs']).strip(),
                     DHIr,
                     DHRs_priv,
                     DHRs,
                     DHRr,
-                    b2a(state['CONVid']).strip(),
-                    state['Ns'],
-                    state['Nr'],
-                    state['PNs'],
+                    b2a(conversation.keys['CONVid']).strip(),
+                    conversation.ns,
+                    conversation.nr,
+                    conversation.pns,
                     ratchet_flag,
                     mode))
         self.write_db()
 
-    def load_state(self, name, other_name):
+    def load_conversation(self, axolotl, name, other_name):
         with self.db as db:
             cur = db.cursor()
             cur.execute('''
@@ -772,7 +771,7 @@ class SqlitePersistence(object):
                     other_identity = ?''', (name, other_name))
             row = cur.fetchone()
         if row:
-            state = \
+            keys = \
                     { 'name': row['my_identity'],
                         'other_name': row['other_identity'],
                         'RK': a2b(row['rk']),
@@ -785,22 +784,24 @@ class SqlitePersistence(object):
                         'Nr': row['nr'],
                         'PNs': row['pns'],
                     }
-            state['HKs'] = None if row['hks'] == '0' else a2b(row['hks'])
-            state['HKr'] = None if row['hkr'] == '0' else a2b(row['hkr'])
-            state['CKs'] = None if row['cks'] == '0' else a2b(row['cks'])
-            state['CKr'] = None if row['ckr'] == '0' else a2b(row['ckr'])
-            state['DHIr'] = None if row['dhir'] == '0' else a2b(row['dhir'])
-            state['DHRs_priv'] = None if row['dhrs_priv'] == '0' else a2b(row['dhrs_priv'])
-            state['DHRs'] = None if row['dhrs'] == '0' else a2b(row['dhrs'])
-            state['DHRr'] = None if row['dhrr'] == '0' else a2b(row['dhrr'])
+            keys['HKs'] = None if row['hks'] == '0' else a2b(row['hks'])
+            keys['HKr'] = None if row['hkr'] == '0' else a2b(row['hkr'])
+            keys['CKs'] = None if row['cks'] == '0' else a2b(row['cks'])
+            keys['CKr'] = None if row['ckr'] == '0' else a2b(row['ckr'])
+            keys['DHIr'] = None if row['dhir'] == '0' else a2b(row['dhir'])
+            keys['DHRs_priv'] = None if row['dhrs_priv'] == '0' else a2b(row['dhrs_priv'])
+            keys['DHRs'] = None if row['dhrs'] == '0' else a2b(row['dhrs'])
+            keys['DHRr'] = None if row['dhrr'] == '0' else a2b(row['dhrr'])
             ratchet_flag = row['ratchet_flag']
-            state['ratchet_flag'] = True if ratchet_flag == 1 \
+            keys['ratchet_flag'] = True if ratchet_flag == 1 \
                                                 else False
             mode = row['mode']
             mode = True if mode == 1 else False
-            return (state, mode)  # exit at first match
+            # exit at first match
+            return AxolotlConversation(axolotl, keys, mode)
         else:
-            return ()  # if no matches
+            # if no matches
+            return None
 
 
 class SynchronizedSqliteConnection(sqlite3.Connection):
