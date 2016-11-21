@@ -644,7 +644,7 @@ class SqlitePersistence(object):
             state['ratchet_flag'] = True if ratchet_flag == 1 \
                                                 else False
             mode = row['mode']
-            self.mode = True if mode == 1 else False
+            mode = True if mode == 1 else False
             return (state, mode)  # exit at first match
         else:
             return ()  # if no matches
