@@ -70,6 +70,7 @@ class Axolotl(object):
         self.state['DHRs_priv'], self.state['DHRs'] = generate_keypair()
         self.handshakeKey, self.handshakePKey = generate_keypair()
         self.storeTime = 2*86400 # minimum time (seconds) to store missed ephemeral message keys
+        self.lock = Lock()
         self.persistence = SqlitePersistence(self.dbname,
                                              self.dbpassphrase,
                                              self.storeTime,
@@ -254,10 +255,13 @@ class Axolotl(object):
         return decrypt_symmetric(key, encrypted)
 
     def commit_skipped_mk(self, conversation):
-        self.persistence.commit_skipped_mk(conversation)
+        with self.lock:
+            self.persistence.commit_skipped_mk(conversation)
 
     def try_skipped_mk(self, msg, pad_length, conversation):
-        return self.persistence.try_skipped_mk(msg, pad_length, conversation)
+        with self.lock:
+            return self.persistence.try_skipped_mk(msg, pad_length,
+                                                   conversation)
 
     def decrypt(self, msg):
         return self.conversation.decrypt(msg)
@@ -281,7 +285,8 @@ class Axolotl(object):
         self.save_conversation(self.conversation)
 
     def save_conversation(self, conversation):
-        self.persistence.save_conversation(conversation)
+        with self.lock:
+            self.persistence.save_conversation(conversation)
 
     def loadState(self, name, other_name):
         self.persistence.db = self.openDB()
@@ -292,7 +297,8 @@ class Axolotl(object):
             return False
 
     def load_conversation(self, name, other_name):
-        return self.persistence.load_conversation(self, name, other_name)
+        with self.lock:
+            return self.persistence.load_conversation(self, name, other_name)
 
     def openDB(self):
         return self.persistence._open_db()
