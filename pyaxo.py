@@ -553,13 +553,8 @@ class SqlitePersistence(object):
         self.db = self._open_db()
 
     def _open_db(self):
-        if self.nonthreaded:
-            factory = sqlite3.Connection
-        else:
-            factory = SynchronizedSqliteConnection
-
         db = sqlite3.connect(':memory:', check_same_thread=self.nonthreaded,
-                             factory=factory)
+                             factory=sqlite3.Connection)
         db.row_factory = sqlite3.Row
 
         with db:
@@ -808,20 +803,6 @@ class SqlitePersistence(object):
         else:
             # if no matches
             return None
-
-
-class SynchronizedSqliteConnection(sqlite3.Connection):
-    def __init__(self, *args, **kwargs):
-        super(SynchronizedSqliteConnection, self).__init__(*args, **kwargs)
-        self.lock = Lock()
-
-    def __enter__(self):
-        self.lock.acquire()
-        return super(SynchronizedSqliteConnection, self).__enter__()
-
-    def __exit__(self, *args, **kwargs):
-        super(SynchronizedSqliteConnection, self).__exit__(*args, **kwargs)
-        self.lock.release()
 
 
 def hash_(data):
