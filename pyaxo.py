@@ -331,6 +331,14 @@ class AxolotlConversation:
         self.keys['other_name'] = other_name
 
     @property
+    def id_(self):
+        return self.keys['CONVid']
+
+    @id_.setter
+    def id_(self, id_):
+        self.keys['CONVid'] = id_
+
+    @property
     def ns(self):
         return self.keys['Ns']
 
