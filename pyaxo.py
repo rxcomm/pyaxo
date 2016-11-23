@@ -76,8 +76,6 @@ class Axolotl(object):
                                              self.storeTime,
                                              self.nonthreaded_sql)
 
-        self.commit_skipped_mk(self.conversation)
-
     @property
     def state(self):
         return self.conversation.keys
@@ -254,15 +252,6 @@ class Axolotl(object):
     def dec(self, key, encrypted):
         return decrypt_symmetric(key, encrypted)
 
-    def commit_skipped_mk(self, conversation):
-        with self.lock:
-            self.persistence.commit_skipped_mk(conversation)
-
-    def try_skipped_mk(self, msg, pad_length, conversation):
-        with self.lock:
-            return self.persistence.try_skipped_mk(msg, pad_length,
-                                                   conversation)
-
     def decrypt(self, msg):
         return self.conversation.decrypt(msg)
 
@@ -311,11 +300,12 @@ class Axolotl(object):
 
 
 class AxolotlConversation:
-    def __init__(self, axolotl, keys, mode):
+    def __init__(self, axolotl, keys, mode, staged_hk_mk=None):
         self._axolotl = axolotl
         self.keys = keys
         self.mode = mode
-        self.staged_hk_mk = dict()
+        self.staged_hk_mk = staged_hk_mk or dict()
+        self.staged = False
 
         self.handshake_key = None
         self.handshake_pkey = None
@@ -448,26 +438,35 @@ class AxolotlConversation:
             self.keys['DHRs_priv'] = None
             self.keys['DHRs'] = None
             self.ratchet_flag = True
-        self.commit_skipped_mk()
         self.nr = Np + 1
         self.keys['CKr'] = CKp
         return body
 
     def try_skipped_mk(self, msg, pad_length):
-        return self._axolotl.try_skipped_mk(msg, pad_length, self)
+        msg1 = msg[:HEADER_LEN-pad_length]
+        msg2 = msg[HEADER_LEN:]
+        for skipped_mk in self.staged_hk_mk.values():
+            try:
+                decrypt_symmetric(skipped_mk.hk, msg1)
+                body = decrypt_symmetric(skipped_mk.mk, msg2)
+            except CryptoError:
+                pass
+            else:
+                del self.staged_hk_mk[skipped_mk.mk]
+                return body
+        return None
 
     def stage_skipped_mk(self, hkr, nr, np, ckr):
+        timestamp = int(time())
         ckp = ckr
         for i in range(np - nr):
             mk = hash_(ckp + '0')
             ckp = hash_(ckp + '1')
-            self.staged_hk_mk[mk] = hkr
+            self.staged_hk_mk[mk] = SkippedMessageKey(mk, hkr, timestamp)
+            self.staged = True
         mk = hash_(ckp + '0')
         ckp = hash_(ckp + '1')
         return ckp, mk
-
-    def commit_skipped_mk(self):
-        self._axolotl.commit_skipped_mk(self)
 
     def encrypt_file(self, filename):
         with open(filename, 'r') as f:
@@ -542,6 +541,13 @@ class AxolotlConversation:
             print 'Mode: Bob'
 
 
+class SkippedMessageKey:
+    def __init__(self, mk, hk, timestamp):
+        self.mk = mk
+        self.hk = hk
+        self.timestamp = timestamp
+
+
 class SqlitePersistence(object):
     def __init__(self, dbname, dbpassphrase, store_time, nonthreaded):
         super(SqlitePersistence, self).__init__()
@@ -583,6 +589,8 @@ class SqlitePersistence(object):
                     self._create_db(db)
                 else:
                     raise
+            else:
+                self.delete_expired_skipped_mk(db)
         return db
 
     def _create_db(self, db):
@@ -630,7 +638,6 @@ class SqlitePersistence(object):
                 conversations (
                     my_identity,
                     other_identity)''')
-
     def write_db(self):
         with self.db as db:
             sql = bytes('\n'.join(db.iterdump()))
@@ -642,12 +649,28 @@ class SqlitePersistence(object):
                 with open(self.dbname, 'w') as f:
                     f.write(sql)
 
-    def commit_skipped_mk(self, conversation):
+    def delete_expired_skipped_mk(self, db):
         timestamp = int(time())
+        rowtime = timestamp - self.store_time
+        db.execute('''
+            DELETE FROM
+                skipped_mk
+            WHERE
+                timestamp < ?''', (rowtime,))
+
+    def commit_skipped_mk(self, conversation):
         with self.db as db:
-            for mk, hkr in conversation.staged_hk_mk.iteritems():
+            db.execute('''
+                DELETE FROM
+                    skipped_mk
+                WHERE
+                    my_identity = ? AND
+                    to_identity = ?''', (
+                        conversation.name,
+                        conversation.other_name))
+            for skipped_mk in conversation.staged_hk_mk.values():
                 db.execute('''
-                    REPLACE INTO
+                    INSERT INTO
                         skipped_mk (
                             my_identity,
                             to_identity,
@@ -657,17 +680,12 @@ class SqlitePersistence(object):
                     VALUES (?, ?, ?, ?, ?)''', (
                         conversation.name,
                         conversation.other_name,
-                        b2a(hkr).strip(),
-                        b2a(mk).strip(),
-                        timestamp))
-            rowtime = timestamp - self.store_time
-            db.execute('''
-                DELETE FROM
-                    skipped_mk
-                WHERE
-                    timestamp < ?''', (rowtime,))
+                        b2a(skipped_mk.hk).strip(),
+                        b2a(skipped_mk.mk).strip(),
+                        skipped_mk.timestamp))
 
-    def try_skipped_mk(self, msg, pad_length, conversation):
+    def load_skipped_mk(self, name, other_name):
+        skipped_hk_mk = dict()
         with self.db as db:
             rows = db.execute('''
                 SELECT
@@ -676,27 +694,13 @@ class SqlitePersistence(object):
                     skipped_mk
                 WHERE
                     my_identity = ? AND
-                    to_identity = ?''', (
-                        conversation.name,
-                        conversation.other_name))
+                    to_identity = ?''', (name, other_name))
         for row in rows:
-            msg1 = msg[:HEADER_LEN-pad_length]
-            msg2 = msg[HEADER_LEN:]
-            try:
-                header = decrypt_symmetric(a2b(row['hkr']), msg1)
-                body = decrypt_symmetric(a2b(row['mk']), msg2)
-            except CryptoError:
-                header = ''
-                body = ''
-            if header != '' and body != '':
-                with self.db as db:
-                    db.execute('''
-                        DELETE FROM
-                            skipped_mk
-                        WHERE
-                            mk = ?''', (row['mk'],))
-                return body
-        return None
+            mk = a2b(row['mk'])
+            skipped_hk_mk[mk] = SkippedMessageKey(mk,
+                                                  hk=a2b(row['hkr']),
+                                                  timestamp=row['timestamp'])
+        return skipped_hk_mk
 
     def save_conversation(self, conversation):
         HKs = 0 if conversation.keys['HKs'] is None else b2a(conversation.keys['HKs']).strip()
@@ -757,6 +761,7 @@ class SqlitePersistence(object):
                     conversation.pns,
                     ratchet_flag,
                     mode))
+        self.commit_skipped_mk(conversation)
         self.write_db()
 
     def load_conversation(self, axolotl, name, other_name):
@@ -798,8 +803,11 @@ class SqlitePersistence(object):
                                                 else False
             mode = row['mode']
             mode = True if mode == 1 else False
+
+            skipped_hk_mk = self.load_skipped_mk(name, other_name)
+
             # exit at first match
-            return AxolotlConversation(axolotl, keys, mode)
+            return AxolotlConversation(axolotl, keys, mode, skipped_hk_mk)
         else:
             # if no matches
             return None
