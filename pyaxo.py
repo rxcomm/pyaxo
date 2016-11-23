@@ -289,6 +289,10 @@ class Axolotl(object):
         with self.lock:
             return self.persistence.load_conversation(self, name, other_name)
 
+    def get_other_names(self):
+        with self.lock:
+            return self.persistence.get_other_names(self.name)
+
     def openDB(self):
         return self.persistence._open_db()
 
@@ -812,6 +816,17 @@ class SqlitePersistence(object):
         else:
             # if no matches
             return None
+
+    def get_other_names(self, name):
+        with self.db as db:
+            rows = db.execute('''
+                SELECT
+                    other_identity
+                FROM
+                    conversations
+                WHERE
+                    my_identity = ?''', (name,))
+            return [row['other_identity'] for row in rows]
 
 
 def hash_(data):

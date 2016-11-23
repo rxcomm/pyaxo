@@ -74,6 +74,39 @@ class TestDefaultDatabase:
             with pytest.raises(SystemExit):
                 a = Axolotl('Angie', dbpassphrase=passphrase_1)
 
+    def test_get_other_names(
+            self, axolotl_a, axolotl_b, axolotl_c,
+            a_identity_keys, b_identity_keys, c_identity_keys,
+            a_handshake_keys, b_handshake_keys, c_handshake_keys,
+            a_ratchet_keys, b_ratchet_keys, c_ratchet_keys):
+        conv_b = axolotl_a.init_conversation(
+            axolotl_b.name,
+            priv_identity_key=a_identity_keys.priv,
+            identity_key=a_identity_keys.pub,
+            priv_handshake_key=a_handshake_keys.priv,
+            other_identity_key=b_identity_keys.pub,
+            other_handshake_key=b_handshake_keys.pub,
+            priv_ratchet_key=a_ratchet_keys.priv,
+            ratchet_key=a_ratchet_keys.pub,
+            other_ratchet_key=b_ratchet_keys.pub)
+
+        conv_c = axolotl_a.init_conversation(
+            axolotl_c.name,
+            priv_identity_key=a_identity_keys.priv,
+            identity_key=a_identity_keys.pub,
+            priv_handshake_key=a_handshake_keys.priv,
+            other_identity_key=c_identity_keys.pub,
+            other_handshake_key=c_handshake_keys.pub,
+            priv_ratchet_key=a_ratchet_keys.priv,
+            ratchet_key=a_ratchet_keys.pub,
+            other_ratchet_key=c_ratchet_keys.pub)
+
+        conv_b.save()
+        conv_c.save()
+
+        assert (sorted(axolotl_a.get_other_names()) ==
+                sorted([axolotl_b.name, axolotl_c.name]))
+
 
 class TestIndividualDatabases:
     dbs = ['angie.db', 'barb.db']
