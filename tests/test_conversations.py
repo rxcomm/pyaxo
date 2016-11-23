@@ -4,7 +4,7 @@ from threading import Event, Thread
 
 import pytest
 
-from pyaxo import Axolotl, generate_keypair
+from pyaxo import Axolotl
 
 
 def test_init_conversation(axolotl_a, axolotl_b,
@@ -134,54 +134,6 @@ def test_create_threaded_conversations(
         mkey_ab, mkey_ac, mkey_bc)
 
     run_threaded_exchanges(exchange, conversations)
-
-
-Keypair = namedtuple('Keypair', 'priv pub')
-
-
-@pytest.fixture()
-def a_identity_keys():
-    return Keypair(*generate_keypair())
-
-
-@pytest.fixture()
-def b_identity_keys():
-    return Keypair(*generate_keypair())
-
-
-@pytest.fixture()
-def c_identity_keys():
-    return Keypair(*generate_keypair())
-
-
-@pytest.fixture()
-def a_handshake_keys():
-    return Keypair(*generate_keypair())
-
-
-@pytest.fixture()
-def b_handshake_keys():
-    return Keypair(*generate_keypair())
-
-
-@pytest.fixture()
-def c_handshake_keys():
-    return Keypair(*generate_keypair())
-
-
-@pytest.fixture()
-def a_ratchet_keys():
-    return Keypair(*generate_keypair())
-
-
-@pytest.fixture()
-def b_ratchet_keys():
-    return Keypair(*generate_keypair())
-
-
-@pytest.fixture()
-def c_ratchet_keys():
-    return Keypair(*generate_keypair())
 
 
 @pytest.fixture()
