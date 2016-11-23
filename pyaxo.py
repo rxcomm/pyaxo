@@ -571,8 +571,7 @@ class SqlitePersistence(object):
         self.db = self._open_db()
 
     def _open_db(self):
-        db = sqlite3.connect(':memory:', check_same_thread=self.nonthreaded,
-                             factory=sqlite3.Connection)
+        db = sqlite3.connect(':memory:', check_same_thread=self.nonthreaded)
         db.row_factory = sqlite3.Row
 
         with db:
