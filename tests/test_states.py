@@ -1,18 +1,3 @@
-import pytest
-
-from pyaxo import Axolotl
-
-
-@pytest.fixture()
-def axolotl_a():
-    return Axolotl('Angie', dbpassphrase=None)
-
-
-@pytest.fixture()
-def axolotl_b():
-    return Axolotl('Barb', dbpassphrase=None)
-
-
 def test_init_state(axolotl_a, axolotl_b, exchange):
     axolotl_a.initState(other_name=axolotl_b.name,
                         other_identityKey=axolotl_b.state['DHIs'],

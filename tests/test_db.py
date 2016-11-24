@@ -1,4 +1,5 @@
 import sqlite3
+from copy import deepcopy
 
 import pytest
 
@@ -73,6 +74,39 @@ class TestDefaultDatabase:
             with pytest.raises(SystemExit):
                 a = Axolotl('Angie', dbpassphrase=passphrase_1)
 
+    def test_get_other_names(
+            self, axolotl_a, axolotl_b, axolotl_c,
+            a_identity_keys, b_identity_keys, c_identity_keys,
+            a_handshake_keys, b_handshake_keys, c_handshake_keys,
+            a_ratchet_keys, b_ratchet_keys, c_ratchet_keys):
+        conv_b = axolotl_a.init_conversation(
+            axolotl_b.name,
+            priv_identity_key=a_identity_keys.priv,
+            identity_key=a_identity_keys.pub,
+            priv_handshake_key=a_handshake_keys.priv,
+            other_identity_key=b_identity_keys.pub,
+            other_handshake_key=b_handshake_keys.pub,
+            priv_ratchet_key=a_ratchet_keys.priv,
+            ratchet_key=a_ratchet_keys.pub,
+            other_ratchet_key=b_ratchet_keys.pub)
+
+        conv_c = axolotl_a.init_conversation(
+            axolotl_c.name,
+            priv_identity_key=a_identity_keys.priv,
+            identity_key=a_identity_keys.pub,
+            priv_handshake_key=a_handshake_keys.priv,
+            other_identity_key=c_identity_keys.pub,
+            other_handshake_key=c_handshake_keys.pub,
+            priv_ratchet_key=a_ratchet_keys.priv,
+            ratchet_key=a_ratchet_keys.pub,
+            other_ratchet_key=c_ratchet_keys.pub)
+
+        conv_b.save()
+        conv_c.save()
+
+        assert (sorted(axolotl_a.get_other_names()) ==
+                sorted([axolotl_b.name, axolotl_c.name]))
+
 
 class TestIndividualDatabases:
     dbs = ['angie.db', 'barb.db']
@@ -108,6 +142,70 @@ class TestIndividualDatabases:
 
         # send some messages back and forth
         exchange(a, b)
+
+    def test_persist_skipped_mk(
+            self, a_identity_keys, a_handshake_keys, a_ratchet_keys,
+            b_identity_keys, b_handshake_keys, b_ratchet_keys):
+        a = Axolotl('angie', dbname=self.dbs[0], dbpassphrase=self.dbs[0])
+        b = Axolotl('barb', dbname=self.dbs[1], dbpassphrase=self.dbs[1])
+
+        conv_a = a.init_conversation(
+            b.name,
+            priv_identity_key=a_identity_keys.priv,
+            identity_key=a_identity_keys.pub,
+            priv_handshake_key=a_handshake_keys.priv,
+            other_identity_key=b_identity_keys.pub,
+            other_handshake_key=b_handshake_keys.pub,
+            priv_ratchet_key=a_ratchet_keys.priv,
+            ratchet_key=a_ratchet_keys.pub,
+            other_ratchet_key=b_ratchet_keys.pub)
+
+        conv_b = b.init_conversation(
+            a.name,
+            priv_identity_key=b_identity_keys.priv,
+            identity_key=b_identity_keys.pub,
+            priv_handshake_key=b_handshake_keys.priv,
+            other_identity_key=a_identity_keys.pub,
+            other_handshake_key=a_handshake_keys.pub,
+            priv_ratchet_key=b_ratchet_keys.priv,
+            ratchet_key=b_ratchet_keys.pub,
+            other_ratchet_key=a_ratchet_keys.pub)
+
+        pt = [utils.PLAINTEXT.format(i) for i in range(5)]
+        ct = list()
+
+        utils.encrypt(conv_a, 0, pt, ct)
+        utils.decrypt(conv_b, 0, pt, ct)
+        utils.encrypt(conv_a, 1, pt, ct)
+        utils.encrypt(conv_a, 2, pt, ct)
+        utils.decrypt(conv_b, 2, pt, ct)
+        utils.encrypt(conv_a, 3, pt, ct)
+        utils.encrypt(conv_a, 4, pt, ct)
+        utils.decrypt(conv_b, 4, pt, ct)
+
+        # make sure there are staged skipped keys
+        assert conv_b.staged_hk_mk
+
+        # save the database, copy the staged keys dict and delete the objects
+        conv_b.save()
+        persisted_hk_mk = deepcopy(conv_b.staged_hk_mk)
+        del b, conv_b
+
+        # load the conversation from disk
+        B = Axolotl('barb', dbname=self.dbs[1], dbpassphrase=self.dbs[1])
+        conv_B = B.load_conversation(B.name, a.name)
+
+        # assert both dicts have the same content
+        assert conv_B.staged_hk_mk.keys() == persisted_hk_mk.keys()
+        for mk in conv_B.staged_hk_mk:
+            assert conv_B.staged_hk_mk[mk].mk == persisted_hk_mk[mk].mk
+            assert conv_B.staged_hk_mk[mk].hk == persisted_hk_mk[mk].hk
+            assert (conv_B.staged_hk_mk[mk].timestamp ==
+                    persisted_hk_mk[mk].timestamp)
+
+        # decrypt the skipped messages
+        utils.decrypt(conv_B, 1, pt, ct)
+        utils.decrypt(conv_B, 3, pt, ct)
 
 
 @pytest.fixture(autouse=True)
