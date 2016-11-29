@@ -21,14 +21,14 @@ from pyaxo import Axolotl
 from time import sleep
 
 """
-Standalone chat script using AES256 encryption with Axolotl ratchet for
-key management.
+Standalone chat script using libsodium for encryption with the Axolotl
+ratchet for key management.
 
 This version of the chat client makes connections over the tor network.
 The server creates an ephemeral hidden service and the client connects
 to the hidden service. You will need to load the following additional
 python modules for this to work: stem, pysocks, txtorcon, pysocks,
-magic-wormhole and txtorcon. They are available on pypi via pip.
+and magic-wormhole. They are available on pypi via pip.
 
 Axotor also requires tor (>=2.9.1). Currently this is in the unstable
 branch. So you may need to update your distribution's tor repository

@@ -15,8 +15,8 @@ from binascii import a2b_base64 as a2b
 from binascii import b2a_base64 as b2a
 
 """
-Standalone chat script using AES256 encryption with Axolotl ratchet for
-key management.
+Standalone chat script using libsodium for encryption with the Axolotl
+ratchet for key management.
 
 Usage:
 1. One side starts the server with:
