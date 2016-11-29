@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-import binascii
 import hashlib
 import socket
 import threading
@@ -9,7 +8,9 @@ import os
 import curses
 import socks
 import stem.process
-from binascii import a2b_base64
+import wh
+from binascii import a2b_base64 as a2b
+from binascii import b2a_base64 as b2a
 from getpass import getpass
 from smp import SMP
 from stem.control import Controller
@@ -24,10 +25,34 @@ Standalone chat script using AES256 encryption with Axolotl ratchet for
 key management.
 
 This version of the chat client makes connections over the tor network.
-The server creates a hidden service and the client connects to the
-hidden service. You will need to load the following additional python
-modules for this to work: stem, pysocks. Both of these are available
-on pypi via pip.
+The server creates an ephemeral hidden service and the client connects
+to the hidden service. You will need to load the following additional
+python modules for this to work: stem, pysocks, txtorcon, pysocks,
+magic-wormhole and txtorcon. They are available on pypi via pip.
+
+Axotor also requires tor (>=2.9.1). Currently this is in the unstable
+branch. So you may need to update your distribution's tor repository
+accordingly.
+
+The only inputs required are the nicks of the conversants, as well as
+a master key. The master key must be of the form N-x where N is an
+integer (1-3 digits should be fine) and x is a lower-case alphanumeric
+string. The initial axolotl database configuration and credential
+exchange are derived from the master key. The master key should be
+exchanged out-of-band between the two conversants before communication
+can be established. An example master key might be 293-xyzzy (don't use
+this one).
+
+On start, the program initializes a tor server and exchanges axolotl
+and hidden service authentication credentials over tor using PAKE
+(password-authenticated key exchange). The specific implementation of
+PAKE used is https://github.com/warner/magic-wormhole. The server
+side creates an ephemeral hidden service that requires basic_auth
+to connect.
+
+The hidden service and axolotl credentials are ephemeral. They exist
+only in ram, and will be deleted upon exit from the program. Exit by
+typing .quit at the chat prompt.
 
 The client also does an authentication step using the Socialist
 Millionaire's Protocol. During startup, after a network connection is
@@ -39,7 +64,7 @@ continue. If you continue, the input window text will appear in red
 to remind you that the session is unauthenticated.
 
 The Axolotl protocol is actually authenticated through the key
-agreement process when the databases are created. You may wonder why
+agreement process when the credentials are created. You may wonder why
 the additional SMP authentication step is included. The answer lies in
 the fact that between sessions, the key databases are stored on disk
 and - at least in principle - could be tampered with. This SMP step
@@ -47,21 +72,17 @@ assures that the other party to your session is actually who you think
 it is.
 
 Usage:
-1. Create databases using:
-     axotor.py -g
-   for both nicks in the conversation
-
-2. One side starts the server with:
+1. One side starts the server with:
      axotor.py -s
 
-3. The other side connects the client to the server with:
+2. The other side connects the client to the server with:
      axotor.py -c
 
-4. .quit at the chat prompt will quit (don't forget the "dot")
+3. .quit at the chat prompt will quit (don't forget the "dot")
 
 Axochat requires the Axolotl module at https://github.com/rxcomm/pyaxo
 
-Copyright (C) 2015 by David R. Andersen <k0rx@RXcomm.net>
+Copyright (C) 2015-2016 by David R. Andersen <k0rx@RXcomm.net>
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -105,12 +126,6 @@ def torcontext():
         print 'You need to wait long enough for the Hidden Service'
         print 'at the server to be established. Try again in a'
         print 'minute or two.'
-
-def axo(my_name, other_name, dbname, dbpassphrase):
-    global a
-    a = Axolotl(my_name, dbname=dbname, dbpassphrase=dbpassphrase,
-                nonthreaded_sql=False)
-    a.loadState(my_name, other_name)
 
 class _Textbox(Textbox):
     """
@@ -173,11 +188,10 @@ def closeWindows(stdscr):
     curses.endwin()
 
 def usage():
-    print 'Usage: ' + sys.argv[0] + ' -(s,c,g)'
+    print 'Usage: ' + sys.argv[0] + ' -(s,c)'
     print ' -s: start a chat in server mode'
     print ' -c: start a chat in client mode'
-    print ' -g: generate a key database for a nick'
-    exit()
+    sys.exit()
 
 def receiveThread(sock, stdscr, input_win, output_win, text_color):
     global screen_needs_update, a
@@ -187,7 +201,8 @@ def receiveThread(sock, stdscr, input_win, output_win, text_color):
             rcv = sock.recv(1024)
             if not rcv:
                 input_win.move(0, 0)
-                input_win.addstr('Disconnected - Ctrl-C to exit!', text_color)
+                input_win.addstr('Disconnected - Ctrl-C to exit!',
+                                 text_color)
                 input_win.refresh()
                 sys.exit()
             data = data + rcv
@@ -200,8 +215,8 @@ def receiveThread(sock, stdscr, input_win, output_win, text_color):
                 output_win.addstr(data)
             if OTHER_NICK+':> .quit' in data:
                 closeWindows(stdscr)
-                a.saveState()
                 print OTHER_NICK+' exited the chat...'
+                sleep(1.5)
                 os._exit(0)
         input_win.move(cursory, cursorx)
         input_win.cursyncup()
@@ -221,8 +236,9 @@ def chatThread(sock, smp_match):
     input_win.addstr(0, 0, NICK + ':> ')
     textpad = _Textbox(input_win, insert_mode=True)
     textpad.stripspaces = True
-    t = threading.Thread(target=receiveThread, args=(sock, stdscr, input_win,
-                         output_win, text_color))
+    t = threading.Thread(target=receiveThread,
+                         args=(sock, stdscr, input_win,
+                               output_win, text_color))
     t.daemon = True
     t.start()
     try:
@@ -244,16 +260,13 @@ def chatThread(sock, smp_match):
                 input_win.addstr('Disconnected')
                 input_win.refresh()
                 closeWindows(stdscr)
-                a.saveState()
                 sys.exit()
             if NICK+':> .quit' in data:
                 closeWindows(stdscr)
-                a.saveState()
                 print 'Notifying '+OTHER_NICK+' that you are quitting...'
                 sys.exit()
             lock.release()
     except KeyboardInterrupt:
-        a.saveState()
         closeWindows(stdscr)
 
 def tor(port, controlport, tor_dir, descriptor_cookie):
@@ -278,27 +291,46 @@ def print_bootstrap_lines(line):
     if 'Bootstrapped ' in line:
         print(term.format(line, term.Color.RED))
 
-def hiddenService():
-    PORT = 50000
-    HOST = '127.0.0.1'
-    hidden_svc_dir = 'tor.hs/'
-
-    print ' * Getting controller'
-    controller = Controller.from_port(address='127.0.0.1', port=TOR_SERVER_CONTROL_PORT)
+def clientController(descriptor_cookie, onion):
+    controller = Controller.from_port(address='127.0.0.1',
+                                      port=TOR_CLIENT_CONTROL_PORT)
     try:
         controller.authenticate(password=TOR_CONTROL_PASSWORD),
         controller.set_options([
-            ('HiddenServiceDir', hidden_svc_dir),
-            ('HiddenServicePort', '50000 %s:%s' % (HOST, str(PORT))),
-            ('HiddenServiceAuthorizeClient', 'stealth axotor'),
+            ('HidServAuth', onion + ' ' + descriptor_cookie),
             ])
-        svc_name = open(hidden_svc_dir + 'hostname', 'r').read().strip()
-        print ' * Created onion server: %s' % svc_name
     except Exception as e:
         print e
     return controller
 
+def ephemeralHiddenService():
+    PORT = 50000
+    HOST = '127.0.0.1'
+    print 'Waiting for Hidden Service descriptor to be published...'
+    print ' (this may take some time)'
+
+    controller = Controller.from_port(address='127.0.0.1',
+                                      port=TOR_SERVER_CONTROL_PORT)
+    controller.authenticate(password=TOR_CONTROL_PASSWORD)
+    try:
+        hs = controller.create_ephemeral_hidden_service(PORT,
+                                                        basic_auth={'axotor': None},
+                                                        await_publication=True)
+    except Exception as e:
+        print e
+    return controller, hs.client_auth['axotor'], hs.service_id +'.onion'
+
+def credentialsSend(mkey, cookie, ratchet_key, onion):
+    w = wh.send(unicode(mkey),
+                cookie+'___'+ratchet_key+'___'+onion,
+                TOR_SERVER_PORT)
+    return w
+
+def credentialsReceive(mkey):
+    return wh.receive(unicode(mkey), TOR_CLIENT_PORT)
+
 def smptest(secret, sock, is_server):
+    global a
     # Create an SMP object with the calculated secret
     smp = SMP(secret)
 
@@ -347,13 +379,42 @@ def smptest(secret, sock, is_server):
     # Check if the secrets match
     if smp.match:
         print 'Secrets Match!'
+        sleep(1)
         smp_match = True
     else:
         print 'Secrets DO NOT Match!'
         smp_match = False
     return smp_match
 
+def doSMP(sock, is_server):
+    global a
+    ans = raw_input('Run SMP authentication step? (y/N)? ')
+    if not ans == 'y': ans = 'N'
+    sock.send(a.encrypt(ans))
+    data = sock.recv(121, socket.MSG_WAITALL)
+    data = a.decrypt(data)
+    if ans == 'N' and data == 'y':
+        print 'Other user requested SMP authentication'
+    if ans == 'y' or data == 'y':
+        print 'Performing per-session SMP authentication...'
+        ans = getpass('Enter SMP secret: ')
+        print 'Running SMP protocol...'
+        secret = ans + a.state['CONVid']
+        smp_match = smptest(secret, sock, is_server)
+        if not smp_match:
+            ans = raw_input('Continue? (y/N) ')
+            if ans != 'y':
+                print 'Exiting...'
+                sys.exit()
+    else:
+        print 'OK - skipping SMP step and assuming ' + \
+               OTHER_NICK + ' is already authenticated...'
+        smp_match = True
+        sleep(2)
+    return smp_match
+
 if __name__ == '__main__':
+    global a
     try:
         mode = sys.argv[1]
     except:
@@ -365,108 +426,62 @@ if __name__ == '__main__':
     screen_needs_update = False
     HOST = '127.0.0.1'
     PORT=50000
+    mkey = getpass('What is the masterkey (format: NNN-xxxx)? ')
 
     if mode == '-s':
-        axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db',
-            dbpassphrase=getpass('Enter the database passphrase: '))
-        tor_process = tor(TOR_SERVER_PORT, TOR_SERVER_CONTROL_PORT, 'tor.server', '')
-        hs = hiddenService()
-        print 'Waiting for ' + OTHER_NICK + ' to connect...'
+        a = Axolotl(NICK,
+                    dbname=OTHER_NICK+'.db',
+                    dbpassphrase=None,
+                    nonthreaded_sql=False)
+        a.createState(other_name=OTHER_NICK,
+                           mkey=hashlib.sha256(mkey).digest(),
+                           mode=False)
+        tor_process = tor(TOR_SERVER_PORT,
+                          TOR_SERVER_CONTROL_PORT,
+                          '/tmp/tor.server',
+                          '')
+        hs, cookie, onion = ephemeralHiddenService()
+        print 'Exhanging credentials via tor...'
+        if credentialsSend(mkey,
+                           cookie,
+                           b2a(a.state['DHRs']).strip(),
+                           onion):
+            pass
+        else:
+            sys.exit(1)
+        print 'Credentials sent, waiting for ' + OTHER_NICK + ' to connect...'
         with socketcontext(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind((HOST, PORT))
             s.listen(1)
             conn, addr = s.accept()
             print 'Connected...'
-            print 'Performing per-session SMP authentication...'
-            ans = getpass('Enter SMP secret: ')
-            print 'Running SMP protocol...'
-            secret = ans + a.state['CONVid']
-            smp_match = smptest(secret, conn, True)
-            if not smp_match:
-                ans = raw_input('Continue? (y/N) ')
-                if ans != 'y':
-                    print 'Exiting...'
-                    a.saveState()
-                    sys.exit()
+            smp_match = doSMP(conn, True)
             chatThread(conn, smp_match)
 
     elif mode == '-c':
-        axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db',
-            dbpassphrase=getpass('Enter the database passphrase: '))
-        try:
-            with open('.descriptor_cookie', 'r') as f:
-                HOST = f.readline().strip()
-                KEY = f.readline().strip()
-        except IOError:
-            HOST = raw_input('Enter the onion server: ')
-            KEY = getpass('Enter the descriptor cookie: ')
-            with open('.descriptor_cookie', 'w') as f:
-                f.write(HOST+'\n'+KEY+'\n')
-            os.chmod('.descriptor_cookie', 0600)
-        tor_process = tor(TOR_CLIENT_PORT, TOR_CLIENT_CONTROL_PORT, 'tor.client', HOST+' '+KEY)
-        print 'Connecting to ' + HOST + '...'
+        a = Axolotl(NICK,
+                    dbname=OTHER_NICK+'.db',
+                    dbpassphrase=None,
+                    nonthreaded_sql=False)
+        tor_process = tor(TOR_CLIENT_PORT,
+                          TOR_CLIENT_CONTROL_PORT,
+                          '/tmp/tor.client',
+                          '')
+        print 'Exhanging credentials via tor...'
+        creds = credentialsReceive(mkey)
+        cookie, rkey, onion = creds.split('___')
+        controller = clientController(cookie, onion)
+        a.createState(other_name=OTHER_NICK,
+                      mkey=hashlib.sha256(mkey).digest(),
+                      mode=True,
+                      other_ratchetKey=a2b(rkey))
+
+        print 'Credentials received, connecting to ' + OTHER_NICK + '...'
         with torcontext() as s:
-            s.connect((HOST, PORT))
+            s.connect((onion, PORT))
             print 'Connected...'
-            print 'Performing per-session SMP authentication...'
-            ans = getpass('Enter SMP secret: ')
-            print 'Running SMP protocol...'
-            secret = ans + a.state['CONVid']
-            smp_match = smptest(secret, s, False)
-            if not smp_match:
-                ans = raw_input('Continue? (y/N) ')
-                if ans != 'y':
-                    print 'Exiting...'
-                    a.saveState()
-                    sys.exit()
+            smp_match = doSMP(s, False)
             chatThread(s, smp_match)
-
-    elif mode == '-g':
-         newaxo = Axolotl(NICK, dbname=OTHER_NICK+'.db')
-         newaxo.printKeys()
-
-         ans = raw_input('Do you want to create a new Axolotl database? y/N ')
-         if ans == 'y':
-             creation_option = raw_input("Do you have the other party's "
-                                         "ratchet AND handshake keys, or a "
-                                         "masterkey exchanged by some "
-                                         "out-of-band method? H/m ")
-             if creation_option == 'm':
-                 mkey = getpass('What is the masterkey? ')
-                 print "If you are the first one creating a database, you " + \
-                       "should use mode Bob because Alice needs Bob's " + \
-                       "ratchet key to create hers. If the other party " + \
-                       "sent you their ratchet key, your mode should be Alice."
-                 state_mode = raw_input('Will your mode be Alice or Bob? a/B ')
-                 if state_mode == 'a':
-                     rkey = raw_input('What is the ratchet key for the other '
-                                      'party? ')
-                     newaxo.createState(other_name=OTHER_NICK,
-                                        mkey=hashlib.sha256(mkey).digest(),
-                                        mode=True,
-                                        other_ratchetKey=a2b_base64(rkey))
-                 else:
-                     newaxo.createState(other_name=OTHER_NICK,
-                                        mkey=hashlib.sha256(mkey).digest(),
-                                        mode=False)
-                     print 'Do not forget to send your ratchet key (shown ' + \
-                           'above) to the other party.'
-                     print 'Make sure the other party generates their ' + \
-                           'database as Alice.'
-             else:
-                 identity = raw_input('What is the identity key for the other '
-                                      'party? ')
-                 ratchet = raw_input('What is the ratchet key for the other '
-                                     'party? ')
-                 handshake = raw_input('What is the handshake key for the '
-                                       'other party? ')
-                 newaxo.initState(OTHER_NICK, binascii.a2b_base64(identity),
-                                  binascii.a2b_base64(handshake),
-                                  binascii.a2b_base64(ratchet))
-             newaxo.saveState()
-             print 'The database for ' + NICK + ' -> ' + OTHER_NICK + ' has been saved.'
-         else:
-             print 'OK, nothing has been saved...'
 
     else:
         usage()

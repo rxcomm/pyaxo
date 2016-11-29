@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import binascii
+import hashlib
 import socket
 import threading
 import sys
@@ -10,33 +10,32 @@ from random import randint
 from contextlib import contextmanager
 from pyaxo import Axolotl
 from time import sleep
+from getpass import getpass
+from binascii import a2b_base64 as a2b
+from binascii import b2a_base64 as b2a
 
 """
 Standalone chat script using AES256 encryption with Axolotl ratchet for
 key management.
 
 Usage:
-1. Create databases using:
-     axochat.py -g
-   for both nicks in the conversation
-
-2. One side starts the server with:
+1. One side starts the server with:
      axochat.py -s
 
-3. The other side connects the client to the server with:
+2. The other side connects the client to the server with:
      axochat.py -c
+
+3. Both sides need to input the same master key. This can be any
+   alphanumeric string. Also, the server will generate a handshake
+   key that is a required input for the client.
 
 4. .quit at the chat prompt will quit (don't forget the "dot")
 
 Port 50000 is the default port, but you can choose your own port as well.
 
-Be sure to edit the getPasswd() method to return your password. You can
-hard code it or get it from e.g. a keyring. It just has to match the password
-you used when creating the database.
-
 Axochat requires the Axolotl module at https://github.com/rxcomm/pyaxo
 
-Copyright (C) 2014 by David R. Andersen <k0rx@RXcomm.net>
+Copyright (C) 2014-2016 by David R. Andersen <k0rx@RXcomm.net>
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -59,13 +58,6 @@ def socketcontext(*args, **kwargs):
     s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
     yield s
     s.close()
-
-@contextmanager
-def axo(my_name, other_name, dbname, dbpassphrase):
-    a = Axolotl(my_name, dbname=dbname, dbpassphrase=dbpassphrase)
-    a.loadState(my_name, other_name)
-    yield a
-    a.saveState()
 
 class _Textbox(Textbox):
     """
@@ -128,14 +120,13 @@ def closeWindows(stdscr):
     curses.endwin()
 
 def usage():
-    print 'Usage: ' + sys.argv[0] + ' -(s,c,g)'
+    print 'Usage: ' + sys.argv[0] + ' -(s,c)'
     print ' -s: start a chat in server mode'
     print ' -c: start a chat in client mode'
-    print ' -g: generate a key database for a nick'
     exit()
 
 def receiveThread(sock, stdscr, input_win, output_win):
-    global screen_needs_update
+    global screen_needs_update, a
     while True:
         data = ''
         while data[-3:] != 'EOP':
@@ -151,9 +142,7 @@ def receiveThread(sock, stdscr, input_win, output_win):
         (cursory, cursorx) = input_win.getyx()
         for data in data_list:
             if data != '':
-                with axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db',
-                         dbpassphrase=getPasswd(NICK)) as a:
-                    output_win.addstr(a.decrypt(data))
+                output_win.addstr(a.decrypt(data))
         input_win.move(cursory, cursorx)
         input_win.cursyncup()
         input_win.noutrefresh()
@@ -163,7 +152,7 @@ def receiveThread(sock, stdscr, input_win, output_win):
         lock.release()
 
 def chatThread(sock):
-    global screen_needs_update
+    global screen_needs_update, a
     stdscr, input_win, output_win = windows()
     input_win.addstr(0, 0, NICK + ':> ')
     textpad = _Textbox(input_win, insert_mode=True)
@@ -187,15 +176,13 @@ def chatThread(sock):
             input_win.noutrefresh()
             screen_needs_update = True
             data = data.replace('\n', '') + '\n'
-            with axo(NICK, OTHER_NICK, dbname=OTHER_NICK+'.db',
-                     dbpassphrase=getPasswd(NICK)) as a:
-                try:
-                    sock.send(a.encrypt(data) + 'EOP')
-                except socket.error:
-                    input_win.addstr('Disconnected')
-                    input_win.refresh()
-                    closeWindows(stdscr)
-                    sys.exit()
+            try:
+                sock.send(a.encrypt(data) + 'EOP')
+            except socket.error:
+                input_win.addstr('Disconnected')
+                input_win.refresh()
+                closeWindows(stdscr)
+                sys.exit()
             sleep(0.01) # write time for axo db
             lock.release()
     except KeyboardInterrupt:
@@ -205,6 +192,7 @@ def getPasswd(nick):
     return '1'
 
 if __name__ == '__main__':
+    global a
     try:
         mode = sys.argv[1]
     except:
@@ -212,14 +200,12 @@ if __name__ == '__main__':
 
     NICK = raw_input('Enter your nick: ')
     OTHER_NICK = raw_input('Enter the nick of the other party: ')
+    mkey = getpass('Enter the master key: ')
     lock = threading.Lock()
     screen_needs_update = False
     HOST = ''
     while True:
         try:
-            if mode == '-g':
-                PORT = 50000 # dummy assignment
-                break
             PORT = raw_input('TCP port (1 for random choice, 50000 is default): ')
             PORT = int(PORT)
             break
@@ -233,6 +219,16 @@ if __name__ == '__main__':
         print 'PORT is ' + str(PORT)
 
     if mode == '-s':
+        a = Axolotl(NICK,
+                    dbname=OTHER_NICK+'.db',
+                    dbpassphrase=None,
+                    nonthreaded_sql=False)
+        a.createState(other_name=OTHER_NICK,
+                      mkey=hashlib.sha256(mkey).digest(),
+                      mode=False)
+        print 'Your ratchet key is: %s' % b2a(a.state['DHRs']).strip()
+        print 'Send this to %s...' % OTHER_NICK
+
         print 'Waiting for ' + OTHER_NICK + ' to connect...'
         with socketcontext(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind((HOST, PORT))
@@ -241,27 +237,21 @@ if __name__ == '__main__':
             chatThread(conn)
 
     elif mode == '-c':
+        rkey = raw_input('Enter %s\'s ratchet key: ' % OTHER_NICK)
+        a = Axolotl(NICK,
+                    dbname=OTHER_NICK+'.db',
+                    dbpassphrase=None,
+                    nonthreaded_sql=False)
+        a.createState(other_name=OTHER_NICK,
+                      mkey=hashlib.sha256(mkey).digest(),
+                      mode=True,
+                      other_ratchetKey=a2b(rkey))
+
         HOST = raw_input('Enter the server: ')
         print 'Connecting to ' + HOST + '...'
         with socketcontext(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((HOST, PORT))
             chatThread(s)
-
-    elif mode == '-g':
-         a = Axolotl(NICK, dbname=OTHER_NICK+'.db')
-         a.printKeys()
-
-         ans = raw_input('Do you want to create a new Axolotl database? y/N ').strip()
-         if ans == 'y':
-             identity = raw_input('What is the identity key for the other party? ').strip()
-             ratchet = raw_input('What is the ratchet key for the other party? ').strip()
-             handshake = raw_input('What is the handshake key for the other party? ').strip()
-             a.initState(OTHER_NICK, binascii.a2b_base64(identity), binascii.a2b_base64(handshake),
-                         binascii.a2b_base64(ratchet))
-             a.saveState()
-             print 'The database for ' + NICK + ' -> ' + OTHER_NICK + ' has been saved.'
-         else:
-             print 'OK, nothing has been saved...'
 
     else:
         usage()
