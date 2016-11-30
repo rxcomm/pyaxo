@@ -279,15 +279,17 @@ class Axolotl(object):
 
     def loadState(self, name, other_name):
         self.persistence.db = self.openDB()
-        self.conversation = self.load_conversation(name, other_name)
+        self.conversation = self.load_conversation(other_name, name)
         if self.conversation:
             return
         else:
             return False
 
-    def load_conversation(self, name, other_name):
+    def load_conversation(self, other_name, name=None):
         with self.lock:
-            return self.persistence.load_conversation(self, name, other_name)
+            return self.persistence.load_conversation(self,
+                                                      name or self.name,
+                                                      other_name)
 
     def get_other_names(self):
         with self.lock:
