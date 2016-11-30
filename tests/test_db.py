@@ -35,8 +35,7 @@ class TestDefaultDatabase:
                        verify=False)
 
         # get the plaintext
-        with open('./file.txt', 'r') as f:
-            msg = f.read()
+        msg = 'plaintext'
 
         # Tom encrypts it to Dick
         ciphertext = tom.encrypt(msg)
