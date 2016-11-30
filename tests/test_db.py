@@ -193,7 +193,7 @@ class TestIndividualDatabases:
 
         # load the conversation from disk
         B = Axolotl('barb', dbname=self.dbs[1], dbpassphrase=self.dbs[1])
-        conv_B = B.load_conversation(B.name, a.name)
+        conv_B = B.load_conversation(a.name)
 
         # assert both dicts have the same content
         assert conv_B.staged_hk_mk.keys() == persisted_hk_mk.keys()
