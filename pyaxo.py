@@ -848,15 +848,13 @@ def kdf(secret, salt):
 
 def generate_keypair():
     privkey = PrivateKey.generate()
-    pubkey = privkey.public_key
-    return privkey._private_key, pubkey._public_key
+    return bytes(privkey), bytes(privkey.public_key)
 
 
 def generate_dh(a, b):
     a = PrivateKey(a)
     b = PublicKey(b)
-    key = Box(a, b)
-    return key._shared_key
+    return bytes(Box(a, b))
 
 
 def generate_3dh(a, a0, b, b0, mode=ALICE_MODE):
@@ -873,7 +871,7 @@ def generate_3dh(a, a0, b, b0, mode=ALICE_MODE):
 def encrypt_symmetric(key, plaintext):
     nonce = nacl.utils.random(nacl.secret.SecretBox.NONCE_SIZE)
     box = nacl.secret.SecretBox(key)
-    return nonce + box.encrypt(plaintext, nonce).ciphertext
+    return bytes(box.encrypt(plaintext, nonce))
 
 
 def decrypt_symmetric(key, ciphertext):
