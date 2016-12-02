@@ -200,7 +200,7 @@ def uploadThread(onion, command, output_win):
     filename = command.split(':> .send ')[1].strip()
     filename = os.path.expanduser(filename)
     if not os.path.exists(filename):
-        output_win.addstr('\nFile %s does not exist...\n\n' % filename, 
+        output_win.addstr('File %s does not exist...\n' % filename, 
                            curses.color_pair(1))
         output_win.refresh()
         abort = True
@@ -215,7 +215,7 @@ def uploadThread(onion, command, output_win):
                 conn.send(a.encrypt('ABORT') + 'EOF')
                 sys.exit()
             else:
-                output_win.addstr('\nSending file %s...\n' % filename, 
+                output_win.addstr('Sending file %s...\n' % filename, 
                                    curses.color_pair(3))
                 output_win.refresh()
             with open(filename, 'rb') as f:
@@ -231,19 +231,19 @@ def uploadThread(onion, command, output_win):
                     pass
                 sys.exit()
             else:
-                output_win.addstr('\nSending file %s...\n' % filename, 
+                output_win.addstr('Sending file %s...\n' % filename, 
                                    curses.color_pair(3))
                 output_win.refresh()
             with open(filename, 'rb') as f:
                 data = a.encrypt(f.read())
                 s.send(data + 'EOF')
-    output_win.addstr('\n%s sent...\n\n' % filename, curses.color_pair(3))
+    output_win.addstr('%s sent...\n' % filename, curses.color_pair(3))
     output_win.refresh()
 
 def downloadThread(onion, command, output_win):
     global screen_needs_update, a
     filename = command.split(':> .send ')[1].strip().split('/').pop()
-    output_win.addstr('\nReceiving file %s...\n\n' % filename,
+    output_win.addstr('Receiving file %s...\n' % filename,
                        curses.color_pair(3))
     output_win.refresh()
     if onion is None:
@@ -256,13 +256,13 @@ def downloadThread(onion, command, output_win):
                 rcv = conn.recv(4096)
                 data = data + rcv
                 if not rcv:
-                    output_win.addstr('Receiving %s aborted...\n\n' % filename,
+                    output_win.addstr('Receiving %s aborted...\n' % filename,
                                        curses.color_pair(1))
                     output_win.refresh()
                     sys.exit()
             data = a.decrypt(data[:-3])
             if data == 'ABORT':
-                output_win.addstr('Receiving %s aborted...\n\n' % filename,
+                output_win.addstr('Receiving %s aborted...\n' % filename,
                                    curses.color_pair(1))
                 output_win.refresh()
                 sys.exit()
@@ -275,15 +275,20 @@ def downloadThread(onion, command, output_win):
             while data[-3:] != 'EOF':
                 rcv = s.recv(4096)
                 data = data + rcv
-            with open(filename, 'wb') as f:
-                data = a.decrypt(data[:-3])
-                if data == 'ABORT':
-                    output_win.addstr('\nReceiving %s aborted...\n\n' % filename,
+                if not rcv:
+                    output_win.addstr('Receiving %s aborted...\n' % filename,
                                        curses.color_pair(1))
                     output_win.refresh()
                     sys.exit()
+            data = a.decrypt(data[:-3])
+            if data == 'ABORT':
+                output_win.addstr('Receiving %s aborted...\n' % filename,
+                                   curses.color_pair(1))
+                output_win.refresh()
+                sys.exit()
+            with open(filename, 'wb') as f:
                 f.write(data)
-    output_win.addstr('\n%s received...\n\n' % filename, curses.color_pair(3))
+    output_win.addstr('%s received...\n' % filename, curses.color_pair(3))
     output_win.refresh()
 
 def receiveThread(sock, stdscr, input_win, output_win, text_color, onion):
