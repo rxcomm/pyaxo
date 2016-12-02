@@ -102,6 +102,7 @@ TOR_SERVER_PORT             = 9054
 TOR_SERVER_CONTROL_PORT     = 9055
 TOR_CLIENT_PORT             = 9154
 TOR_CLIENT_CONTROL_PORT     = 9155
+TOR_FILE_TRANSFER_PORT      = 2000
 TOR_CONTROL_PASSWORD        = 'axotor'
 TOR_CONTROL_HASHED_PASSWORD = \
     '16:0DF8A51D5BB7A97160265FEDD732D47AB07FC143446943D92C2C584673'
@@ -166,6 +167,7 @@ def windows():
     curses.use_default_colors()
     curses.init_pair(1, curses.COLOR_RED, -1)
     curses.init_pair(2, curses.COLOR_GREEN, -1)
+    curses.init_pair(3, curses.COLOR_YELLOW, -1)
     curses.cbreak()
     curses.curs_set(1)
     (sizey, sizex) = stdscr.getmaxyx()
@@ -193,7 +195,98 @@ def usage():
     print ' -c: start a chat in client mode'
     sys.exit()
 
-def receiveThread(sock, stdscr, input_win, output_win, text_color):
+def uploadThread(onion, command, output_win):
+    global screen_needs_update, a
+    filename = command.split(':> .send ')[1].strip()
+    filename = os.path.expanduser(filename)
+    if not os.path.exists(filename):
+        output_win.addstr('\nFile %s does not exist...\n\n' % filename, 
+                           curses.color_pair(1))
+        output_win.refresh()
+        abort = True
+    else:
+        abort = False
+    if onion is None:
+        with socketcontext(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(('localhost', TOR_FILE_TRANSFER_PORT))
+            s.listen(1)
+            conn, addr = s.accept()
+            if abort:
+                conn.send(a.encrypt('ABORT') + 'EOF')
+                sys.exit()
+            else:
+                output_win.addstr('\nSending file %s...\n' % filename, 
+                                   curses.color_pair(3))
+                output_win.refresh()
+            with open(filename, 'rb') as f:
+                data = a.encrypt(f.read())
+                conn.send(data + 'EOF')
+    else:
+        with torcontext() as s:
+            s.connect((onion, TOR_FILE_TRANSFER_PORT))
+            if abort:
+                try:
+                    s.send(a.encrypt('ABORT') + 'EOF')
+                except socket.error:
+                    pass
+                sys.exit()
+            else:
+                output_win.addstr('\nSending file %s...\n' % filename, 
+                                   curses.color_pair(3))
+                output_win.refresh()
+            with open(filename, 'rb') as f:
+                data = a.encrypt(f.read())
+                s.send(data + 'EOF')
+    output_win.addstr('\n%s sent...\n\n' % filename, curses.color_pair(3))
+    output_win.refresh()
+
+def downloadThread(onion, command, output_win):
+    global screen_needs_update, a
+    filename = command.split(':> .send ')[1].strip().split('/').pop()
+    output_win.addstr('\nReceiving file %s...\n\n' % filename,
+                       curses.color_pair(3))
+    output_win.refresh()
+    if onion is None:
+        with socketcontext(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(('localhost', TOR_FILE_TRANSFER_PORT))
+            s.listen(1)
+            conn, addr = s.accept()
+            data = ''
+            while data[-3:] != 'EOF':
+                rcv = conn.recv(4096)
+                data = data + rcv
+                if not rcv:
+                    output_win.addstr('Receiving %s aborted...\n\n' % filename,
+                                       curses.color_pair(1))
+                    output_win.refresh()
+                    sys.exit()
+            data = a.decrypt(data[:-3])
+            if data == 'ABORT':
+                output_win.addstr('Receiving %s aborted...\n\n' % filename,
+                                   curses.color_pair(1))
+                output_win.refresh()
+                sys.exit()
+            with open(filename, 'wb') as f:
+                f.write(data)
+    else:
+        with torcontext() as s:
+            s.connect((onion, TOR_FILE_TRANSFER_PORT))
+            data = ''
+            while data[-3:] != 'EOF':
+                rcv = s.recv(4096)
+                data = data + rcv
+            with open(filename, 'wb') as f:
+                data = a.decrypt(data[:-3])
+                if data == 'ABORT':
+                    output_win.addstr('\nReceiving %s aborted...\n\n' % filename,
+                                       curses.color_pair(1))
+                    output_win.refresh()
+                    sys.exit()
+                f.write(data)
+    output_win.addstr('\n%s received...\n\n' % filename, curses.color_pair(3))
+    output_win.refresh()
+
+def receiveThread(sock, stdscr, input_win, output_win, text_color, onion):
     global screen_needs_update, a
     while True:
         data = ''
@@ -212,12 +305,17 @@ def receiveThread(sock, stdscr, input_win, output_win, text_color):
         for data in data_list:
             if data != '':
                 data = a.decrypt(data)
-                output_win.addstr(data)
-            if OTHER_NICK+':> .quit' in data:
+            if ':> .quit' in data:
                 closeWindows(stdscr)
                 print OTHER_NICK+' exited the chat...'
                 sleep(1.5)
                 os._exit(0)
+            if ':> .send' in data:
+                t = threading.Thread(target=downloadThread,
+                                     args=(onion,data,output_win))
+                t.start()
+                data = ''
+            output_win.addstr(data)
         input_win.move(cursory, cursorx)
         input_win.cursyncup()
         input_win.noutrefresh()
@@ -225,7 +323,7 @@ def receiveThread(sock, stdscr, input_win, output_win, text_color):
         screen_needs_update = True
         lock.release()
 
-def chatThread(sock, smp_match):
+def chatThread(sock, smp_match, onion):
     global screen_needs_update, a
     stdscr, input_win, output_win = windows()
     if smp_match:
@@ -238,7 +336,7 @@ def chatThread(sock, smp_match):
     textpad.stripspaces = True
     t = threading.Thread(target=receiveThread,
                          args=(sock, stdscr, input_win,
-                               output_win, text_color))
+                               output_win, text_color, onion))
     t.daemon = True
     t.start()
     try:
@@ -265,7 +363,14 @@ def chatThread(sock, smp_match):
                 closeWindows(stdscr)
                 print 'Notifying '+OTHER_NICK+' that you are quitting...'
                 sys.exit()
+            if NICK+':> .send' in data:
+                t = threading.Thread(target=uploadThread,
+                                     args=(onion,data,output_win))
+                t.start()
             lock.release()
+            if screen_needs_update:
+                curses.doupdate()
+                screen_needs_update = False
     except KeyboardInterrupt:
         closeWindows(stdscr)
 
@@ -313,7 +418,8 @@ def ephemeralHiddenService():
                                       port=TOR_SERVER_CONTROL_PORT)
     controller.authenticate(password=TOR_CONTROL_PASSWORD)
     try:
-        hs = controller.create_ephemeral_hidden_service(PORT,
+        hs = controller.create_ephemeral_hidden_service([PORT,
+                                                        TOR_FILE_TRANSFER_PORT],
                                                         basic_auth={'axotor': None},
                                                         await_publication=True)
     except Exception as e:
@@ -441,7 +547,7 @@ if __name__ == '__main__':
                           '/tmp/tor.server',
                           '')
         hs, cookie, onion = ephemeralHiddenService()
-        print 'Exhanging credentials via tor...'
+        print 'Exchanging credentials via tor...'
         if credentialsSend(mkey,
                            cookie,
                            b2a(a.state['DHRs']).strip(),
@@ -456,7 +562,7 @@ if __name__ == '__main__':
             conn, addr = s.accept()
             print 'Connected...'
             smp_match = doSMP(conn, True)
-            chatThread(conn, smp_match)
+            chatThread(conn, smp_match, None)
 
     elif mode == '-c':
         a = Axolotl(NICK,
@@ -481,7 +587,7 @@ if __name__ == '__main__':
             s.connect((onion, PORT))
             print 'Connected...'
             smp_match = doSMP(s, False)
-            chatThread(s, smp_match)
+            chatThread(s, smp_match, onion)
 
     else:
         usage()
