@@ -1,5 +1,3 @@
-from collections import namedtuple
-
 import pytest
 
 from pyaxo import Axolotl, generate_keypair
@@ -7,52 +5,49 @@ from pyaxo import Axolotl, generate_keypair
 from . import utils
 
 
-Keypair = namedtuple('Keypair', 'priv pub')
-
-
 @pytest.fixture()
 def a_identity_keys():
-    return Keypair(*generate_keypair())
+    return generate_keypair()
 
 
 @pytest.fixture()
 def b_identity_keys():
-    return Keypair(*generate_keypair())
+    return generate_keypair()
 
 
 @pytest.fixture()
 def c_identity_keys():
-    return Keypair(*generate_keypair())
+    return generate_keypair()
 
 
 @pytest.fixture()
 def a_handshake_keys():
-    return Keypair(*generate_keypair())
+    return generate_keypair()
 
 
 @pytest.fixture()
 def b_handshake_keys():
-    return Keypair(*generate_keypair())
+    return generate_keypair()
 
 
 @pytest.fixture()
 def c_handshake_keys():
-    return Keypair(*generate_keypair())
+    return generate_keypair()
 
 
 @pytest.fixture()
 def a_ratchet_keys():
-    return Keypair(*generate_keypair())
+    return generate_keypair()
 
 
 @pytest.fixture()
 def b_ratchet_keys():
-    return Keypair(*generate_keypair())
+    return generate_keypair()
 
 
 @pytest.fixture()
 def c_ratchet_keys():
-    return Keypair(*generate_keypair())
+    return generate_keypair()
 
 
 @pytest.fixture()

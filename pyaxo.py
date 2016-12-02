@@ -32,6 +32,7 @@ import nacl.utils
 import nacl.secret
 from binascii import a2b_base64 as a2b
 from binascii import b2a_base64 as b2a
+from collections import namedtuple
 from getpass import getpass
 from time import time
 from threading import Lock
@@ -846,9 +847,12 @@ def kdf(secret, salt):
     return pbkdf2(secret, salt, rounds=10, prf='hmac-sha256')
 
 
+Keypair = namedtuple('Keypair', 'priv pub')
+
+
 def generate_keypair():
     privkey = PrivateKey.generate()
-    return bytes(privkey), bytes(privkey.public_key)
+    return Keypair(bytes(privkey), bytes(privkey.public_key))
 
 
 def generate_dh(a, b):
