@@ -80,6 +80,11 @@ Usage:
 
 3. .quit at the chat prompt will quit (don't forget the "dot")
 
+4. .send <filename> will send a file to the other party. The file
+   can be from anywhere in the filesystem on the sending computer
+   (~/a/b/<filename> supported) and will be stored in the receiver's
+   local directory.
+
 Axochat requires the Axolotl module at https://github.com/rxcomm/pyaxo
 
 Copyright (C) 2015-2016 by David R. Andersen <k0rx@RXcomm.net>
@@ -578,7 +583,7 @@ if __name__ == '__main__':
                           TOR_CLIENT_CONTROL_PORT,
                           '/tmp/tor.client',
                           '')
-        print 'Exhanging credentials via tor...'
+        print 'Ecxhanging credentials via tor...'
         creds = credentialsReceive(mkey)
         cookie, rkey, onion = creds.split('___')
         controller = clientController(cookie, onion)
