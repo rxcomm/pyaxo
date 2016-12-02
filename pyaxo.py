@@ -23,23 +23,23 @@ For more information, see https://github.com/rxcomm/pyaxo
 """
 
 import errno
-import sqlite3
-import binascii
-import hmac
 import os
+import sqlite3
 import sys
-import nacl.utils
-import nacl.secret
 from binascii import a2b_base64 as a2b
 from binascii import b2a_base64 as b2a
 from collections import namedtuple
 from getpass import getpass
-from time import time
 from threading import Lock
-from passlib.utils.pbkdf2 import pbkdf2
-from nacl.public import PrivateKey, PublicKey, Box
+from time import time
+
+import nacl.secret
+import nacl.utils
 from nacl.exceptions import CryptoError
 from nacl.hash import sha256
+from nacl.public import PrivateKey, PublicKey, Box
+from passlib.utils.pbkdf2 import pbkdf2
+
 
 ALICE_MODE = True
 BOB_MODE = False
