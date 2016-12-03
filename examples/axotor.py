@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-import hashlib
 import socket
 import threading
 import sys
@@ -9,6 +8,7 @@ import curses
 import socks
 import stem.process
 import wh
+import random
 from binascii import a2b_base64 as a2b
 from binascii import b2a_base64 as b2a
 from getpass import getpass
@@ -17,7 +17,7 @@ from stem.control import Controller
 from stem.util import term
 from curses.textpad import Textbox
 from contextlib import contextmanager
-from pyaxo import Axolotl
+from pyaxo import Axolotl, hash_
 from time import sleep
 
 """
@@ -107,7 +107,8 @@ TOR_SERVER_PORT             = 9054
 TOR_SERVER_CONTROL_PORT     = 9055
 TOR_CLIENT_PORT             = 9154
 TOR_CLIENT_CONTROL_PORT     = 9155
-TOR_FILE_TRANSFER_PORT      = 2000
+CLIENT_FILE_TX_PORT         = 2000
+SERVER_FILE_TX_PORT         = 2001
 TOR_CONTROL_PASSWORD        = 'axotor'
 TOR_CONTROL_HASHED_PASSWORD = \
     '16:0DF8A51D5BB7A97160265FEDD732D47AB07FC143446943D92C2C584673'
@@ -161,9 +162,9 @@ def validator(ch):
             screen_needs_update = False
         return ch
     finally:
-        lock.release()
+        winlock.release()
         sleep(0.01) # let receiveThread in if necessary
-        lock.acquire()
+        winlock.acquire()
 
 def windows():
     stdscr = curses.initscr()
@@ -198,103 +199,145 @@ def usage():
     print 'Usage: ' + sys.argv[0] + ' -(s,c)'
     print ' -s: start a chat in server mode'
     print ' -c: start a chat in client mode'
+    print 'quit with .quit'
+    print 'send file with .send <filename>'
     sys.exit()
 
-def uploadThread(onion, command, output_win):
-    global screen_needs_update, a
-    filename = command.split(':> .send ')[1].strip()
-    filename = os.path.expanduser(filename)
-    if not os.path.exists(filename):
-        output_win.addstr('File %s does not exist...\n' % filename, 
-                           curses.color_pair(1))
-        output_win.refresh()
-        abort = True
-    else:
-        abort = False
-    if onion is None:
-        with socketcontext(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind(('localhost', TOR_FILE_TRANSFER_PORT))
-            s.listen(1)
-            conn, addr = s.accept()
-            if abort:
-                conn.send(a.encrypt('ABORT') + 'EOF')
-                sys.exit()
-            else:
-                output_win.addstr('Sending file %s...\n' % filename, 
-                                   curses.color_pair(3))
-                output_win.refresh()
-            with open(filename, 'rb') as f:
-                data = a.encrypt(f.read())
-                conn.send(data + 'EOF')
-    else:
-        with torcontext() as s:
-            s.connect((onion, TOR_FILE_TRANSFER_PORT))
-            if abort:
-                try:
-                    s.send(a.encrypt('ABORT') + 'EOF')
-                except socket.error:
-                    pass
-                sys.exit()
-            else:
-                output_win.addstr('Sending file %s...\n' % filename, 
-                                   curses.color_pair(3))
-                output_win.refresh()
-            with open(filename, 'rb') as f:
-                data = a.encrypt(f.read())
-                s.send(data + 'EOF')
-    output_win.addstr('%s sent...\n' % filename, curses.color_pair(3))
+def reportTransferSocketError(output_win):
+    output_win.addstr('Socket error: Something went wrong.\n',
+                       curses.color_pair(1))
+    winlock.acquire()
     output_win.refresh()
+    winlock.release()
+    sys.exit()
+
+def sendFile(s, filename, abort, output_win):
+    global a
+    if abort:
+        cryptlock.acquire()
+        data = a.encrypt('ABORT') + 'EOP'
+        cryptlock.release()
+        s.send(data)
+        try:
+            s.recv(3, socket.MSG_WAITALL)
+        except socket.error:
+            pass
+        sys.exit()
+    else:
+        output_win.addstr('Sending file %s...\n' % filename, 
+                           curses.color_pair(3))
+        winlock.acquire()
+        output_win.refresh()
+        winlock.release()
+    with open(filename, 'rb') as f:
+        data = f.read()
+        if len(data) == 0:
+            data = 'Sender tried to send a null file!'
+        cryptlock.acquire()
+        data = a.encrypt(data)
+        cryptlock.release()
+        s.send(data + 'EOP')
+    try:
+        s.recv(3, socket.MSG_WAITALL)
+    except socket.error:
+        pass
+
+def receiveFile(s, filename, output_win):
+    global a
+    data = ''
+    while data[-3:] != 'EOP':
+        rcv = s.recv(4096)
+        data = data + rcv
+        if not rcv:
+            output_win.addstr('Receiving %s aborted...\n' % filename,
+                               curses.color_pair(1))
+            winlock.acquire()
+            output_win.refresh()
+            winlock.release()
+            try:
+                s.send('EOP')
+            except socket.error:
+                pass
+            sys.exit()
+    cryptlock.acquire()
+    data = a.decrypt(data[:-3])
+    cryptlock.release()
+    if data == 'ABORT':
+        output_win.addstr('Receiving %s aborted...\n' % filename,
+                           curses.color_pair(1))
+        winlock.acquire()
+        output_win.refresh()
+        winlock.release()
+        sys.exit()
+    with open(filename, 'wb') as f:
+        f.write(data)
+    try:
+        s.send('EOP')
+    except socket.error:
+        pass
+
+def uploadThread(onion, command, output_win):
+    with transferlock:
+        filename = command.split(':> .send ')[1].strip()
+        filename = os.path.expanduser(filename)
+        if not os.path.exists(filename) or os.path.isdir(filename):
+            output_win.addstr('File %s does not exist...\n' % filename,
+                               curses.color_pair(1))
+            winlock.acquire()
+            output_win.refresh()
+            winlock.release()
+            abort = True
+        else:
+            abort = False
+        if onion is None:
+            with socketcontext(socket.AF_INET, socket.SOCK_STREAM) as s:
+                try:
+                    s.bind(('localhost', SERVER_FILE_TX_PORT))
+                    s.listen(1)
+                    conn, addr = s.accept()
+                except socket.error:
+                    reportTransferSocketError(output_win)
+                sendFile(conn, filename, abort, output_win)
+        else:
+            with torcontext() as s:
+                try:
+                    s.connect((onion, CLIENT_FILE_TX_PORT))
+                except socket.error:
+                    reportTransferSocketError(output_win)
+                sendFile(s, filename, abort, output_win)
+        output_win.addstr('%s sent...\n' % filename, curses.color_pair(3))
+        winlock.acquire()
+        output_win.refresh()
+        winlock.release()
 
 def downloadThread(onion, command, output_win):
-    global screen_needs_update, a
-    filename = command.split(':> .send ')[1].strip().split('/').pop()
-    output_win.addstr('Receiving file %s...\n' % filename,
-                       curses.color_pair(3))
-    output_win.refresh()
-    if onion is None:
-        with socketcontext(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind(('localhost', TOR_FILE_TRANSFER_PORT))
-            s.listen(1)
-            conn, addr = s.accept()
-            data = ''
-            while data[-3:] != 'EOF':
-                rcv = conn.recv(4096)
-                data = data + rcv
-                if not rcv:
-                    output_win.addstr('Receiving %s aborted...\n' % filename,
-                                       curses.color_pair(1))
-                    output_win.refresh()
-                    sys.exit()
-            data = a.decrypt(data[:-3])
-            if data == 'ABORT':
-                output_win.addstr('Receiving %s aborted...\n' % filename,
-                                   curses.color_pair(1))
-                output_win.refresh()
-                sys.exit()
-            with open(filename, 'wb') as f:
-                f.write(data)
-    else:
-        with torcontext() as s:
-            s.connect((onion, TOR_FILE_TRANSFER_PORT))
-            data = ''
-            while data[-3:] != 'EOF':
-                rcv = s.recv(4096)
-                data = data + rcv
-                if not rcv:
-                    output_win.addstr('Receiving %s aborted...\n' % filename,
-                                       curses.color_pair(1))
-                    output_win.refresh()
-                    sys.exit()
-            data = a.decrypt(data[:-3])
-            if data == 'ABORT':
-                output_win.addstr('Receiving %s aborted...\n' % filename,
-                                   curses.color_pair(1))
-                output_win.refresh()
-                sys.exit()
-            with open(filename, 'wb') as f:
-                f.write(data)
-    output_win.addstr('%s received...\n' % filename, curses.color_pair(3))
-    output_win.refresh()
+    with transferlock:
+        filename = command.split(':> .send ')[1].strip().split('/').pop()
+        output_win.addstr('Receiving file %s...\n' % filename,
+                           curses.color_pair(3))
+        winlock.acquire()
+        output_win.refresh()
+        winlock.release()
+        if onion is None:
+            with socketcontext(socket.AF_INET, socket.SOCK_STREAM) as s:
+                try:
+                    s.bind(('localhost', CLIENT_FILE_TX_PORT))
+                    s.listen(1)
+                    conn, addr = s.accept()
+                except socket.error:
+                    reportTransferSocketError(output_win)
+                receiveFile(conn, filename, output_win)
+        else:
+            with torcontext() as s:
+                try:
+                    s.connect((onion, SERVER_FILE_TX_PORT))
+                except socket.error:
+                    reportTransferSocketError(output_win)
+                receiveFile(s, filename, output_win)
+        output_win.addstr('%s received...\n' % filename, curses.color_pair(3))
+        winlock.acquire()
+        output_win.refresh()
+        winlock.release()
 
 def receiveThread(sock, stdscr, input_win, output_win, text_color, onion):
     global screen_needs_update, a
@@ -310,11 +353,13 @@ def receiveThread(sock, stdscr, input_win, output_win, text_color, onion):
                 sys.exit()
             data = data + rcv
         data_list = data.split('EOP')
-        lock.acquire()
+        winlock.acquire()
         (cursory, cursorx) = input_win.getyx()
         for data in data_list:
             if data != '':
+                cryptlock.acquire()
                 data = a.decrypt(data)
+                cryptlock.release()
             if ':> .quit' in data:
                 closeWindows(stdscr)
                 print OTHER_NICK+' exited the chat...'
@@ -331,7 +376,7 @@ def receiveThread(sock, stdscr, input_win, output_win, text_color, onion):
         input_win.noutrefresh()
         output_win.noutrefresh()
         screen_needs_update = True
-        lock.release()
+        winlock.release()
 
 def chatThread(sock, smp_match, onion):
     global screen_needs_update, a
@@ -351,7 +396,7 @@ def chatThread(sock, smp_match, onion):
     t.start()
     try:
         while True:
-            lock.acquire()
+            winlock.acquire()
             data = textpad.edit(validator)
             input_win.clear()
             input_win.addstr(NICK+':> ')
@@ -363,7 +408,9 @@ def chatThread(sock, smp_match, onion):
             screen_needs_update = True
             data = data.replace('\n', '') + '\n'
             try:
+                cryptlock.acquire()
                 sock.send(a.encrypt(data) + 'EOP')
+                cryptlock.release()
             except socket.error:
                 input_win.addstr('Disconnected')
                 input_win.refresh()
@@ -377,7 +424,7 @@ def chatThread(sock, smp_match, onion):
                 t = threading.Thread(target=uploadThread,
                                      args=(onion,data,output_win))
                 t.start()
-            lock.release()
+            winlock.release()
             if screen_needs_update:
                 curses.doupdate()
                 screen_needs_update = False
@@ -429,7 +476,8 @@ def ephemeralHiddenService():
     controller.authenticate(password=TOR_CONTROL_PASSWORD)
     try:
         hs = controller.create_ephemeral_hidden_service([PORT,
-                                                        TOR_FILE_TRANSFER_PORT],
+                                                        CLIENT_FILE_TX_PORT,
+                                                        SERVER_FILE_TX_PORT],
                                                         basic_auth={'axotor': None},
                                                         await_publication=True)
     except Exception as e:
@@ -538,7 +586,9 @@ if __name__ == '__main__':
 
     NICK = raw_input('Enter your nick: ')
     OTHER_NICK = raw_input('Enter the nick of the other party: ')
-    lock = threading.Lock()
+    winlock = threading.Lock()
+    transferlock = threading.Lock()
+    cryptlock = threading.Lock()
     screen_needs_update = False
     HOST = '127.0.0.1'
     PORT=50000
@@ -550,7 +600,7 @@ if __name__ == '__main__':
                     dbpassphrase=None,
                     nonthreaded_sql=False)
         a.createState(other_name=OTHER_NICK,
-                           mkey=hashlib.sha256(mkey).digest(),
+                           mkey=hash_(mkey),
                            mode=False)
         tor_process = tor(TOR_SERVER_PORT,
                           TOR_SERVER_CONTROL_PORT,
@@ -583,12 +633,12 @@ if __name__ == '__main__':
                           TOR_CLIENT_CONTROL_PORT,
                           '/tmp/tor.client',
                           '')
-        print 'Ecxhanging credentials via tor...'
+        print 'Exchanging credentials via tor...'
         creds = credentialsReceive(mkey)
         cookie, rkey, onion = creds.split('___')
         controller = clientController(cookie, onion)
         a.createState(other_name=OTHER_NICK,
-                      mkey=hashlib.sha256(mkey).digest(),
+                      mkey=hash_(mkey),
                       mode=True,
                       other_ratchetKey=a2b(rkey))
 
