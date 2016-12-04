@@ -291,6 +291,10 @@ class Axolotl(object):
                                                       name or self.name,
                                                       other_name)
 
+    def delete_conversation(self, conversation):
+        with self.lock:
+            return self.persistence.delete_conversation(conversation)
+
     def get_other_names(self):
         with self.lock:
             return self.persistence.get_other_names(self.name)
@@ -511,6 +515,9 @@ class AxolotlConversation:
 
     def save(self):
         self._axolotl.save_conversation(self)
+
+    def delete(self):
+        self._axolotl.delete_conversation(self)
 
     def print_keys(self):
         print 'Your Identity key is:\n' + b2a(self.keys['DHIs']) + '\n'
@@ -825,6 +832,20 @@ class SqlitePersistence(object):
         else:
             # if no matches
             return None
+
+    def delete_conversation(self, conversation):
+        with self.db as db:
+            db.execute('''
+                DELETE FROM
+                    skipped_mk
+                WHERE
+                    to_identity = ?''', (conversation.other_name,))
+            db.execute('''
+                DELETE FROM
+                    conversations
+                WHERE
+                    other_identity = ?''', (conversation.other_name,))
+        self.write_db()
 
     def get_other_names(self, name):
         with self.db as db:
