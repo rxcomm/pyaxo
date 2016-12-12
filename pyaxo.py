@@ -23,22 +23,22 @@ For more information, see https://github.com/rxcomm/pyaxo
 """
 
 import errno
-import sqlite3
-import binascii
-import hmac
 import os
+import sqlite3
 import sys
-import nacl.utils
-import nacl.secret
-from binascii import a2b_base64 as a2b
-from binascii import b2a_base64 as b2a
+from collections import namedtuple
 from getpass import getpass
-from time import time
 from threading import Lock
-from passlib.utils.pbkdf2 import pbkdf2
-from nacl.public import PrivateKey, PublicKey, Box
+from time import time
+
+import nacl.secret
+import nacl.utils
+from nacl.encoding import Base64Encoder
 from nacl.exceptions import CryptoError
 from nacl.hash import sha256
+from nacl.public import PrivateKey, PublicKey, Box
+from passlib.utils.pbkdf2 import pbkdf2
+
 
 ALICE_MODE = True
 BOB_MODE = False
@@ -291,6 +291,10 @@ class Axolotl(object):
                                                       name or self.name,
                                                       other_name)
 
+    def delete_conversation(self, conversation):
+        with self.lock:
+            return self.persistence.delete_conversation(conversation)
+
     def get_other_names(self):
         with self.lock:
             return self.persistence.get_other_names(self.name)
@@ -485,7 +489,7 @@ class AxolotlConversation:
     def encrypt_file(self, filename):
         with open(filename, 'r') as f:
             plaintext = f.read()
-        ciphertext = b2a(self.encrypt(plaintext))
+        ciphertext = b2a(self.encrypt(plaintext)) + '\n'
         with open(filename+'.asc', 'w') as f:
             lines = [ciphertext[i:i+64] for i in xrange(0, len(ciphertext), 64)]
             for line in lines:
@@ -499,7 +503,7 @@ class AxolotlConversation:
 
     def encrypt_pipe(self):
         plaintext = sys.stdin.read()
-        ciphertext = b2a(self.encrypt(plaintext))
+        ciphertext = b2a(self.encrypt(plaintext)) + '\n'
         sys.stdout.write(ciphertext)
         sys.stdout.flush()
 
@@ -512,15 +516,18 @@ class AxolotlConversation:
     def save(self):
         self._axolotl.save_conversation(self)
 
+    def delete(self):
+        self._axolotl.delete_conversation(self)
+
     def print_keys(self):
-        print 'Your Identity key is:\n' + b2a(self.keys['DHIs'])
+        print 'Your Identity key is:\n' + b2a(self.keys['DHIs']) + '\n'
         fingerprint = hash_(self.keys['DHIs']).encode('hex').upper()
         fprint = ''
         for i in range(0, len(fingerprint), 4):
             fprint += fingerprint[i:i+2] + ':'
         print 'Your identity key fingerprint is: '
         print fprint[:-1] + '\n'
-        print 'Your Ratchet key is:\n' + b2a(self.keys['DHRs'])
+        print 'Your Ratchet key is:\n' + b2a(self.keys['DHRs']) + '\n'
         if self.handshake_key:
             print 'Your Handshake key is:\n' + b2a(self.handshake_pkey)
         else:
@@ -546,7 +553,7 @@ class AxolotlConversation:
                          self.keys[key].decode('ascii')
                          print key + ': ' + self.keys[key]
                      except UnicodeDecodeError:
-                         print key + ': ' + b2a(self.keys[key]).strip()
+                         print key + ': ' + b2a(self.keys[key])
                  else:
                      print key + ': ' + str(self.keys[key])
         if self.mode is ALICE_MODE:
@@ -683,8 +690,8 @@ class SqlitePersistence(object):
                     VALUES (?, ?, ?, ?, ?)''', (
                         conversation.name,
                         conversation.other_name,
-                        b2a(skipped_mk.hk).strip(),
-                        b2a(skipped_mk.mk).strip(),
+                        b2a(skipped_mk.hk),
+                        b2a(skipped_mk.mk),
                         skipped_mk.timestamp))
 
     def _load_skipped_mk(self, name, other_name):
@@ -717,14 +724,14 @@ class SqlitePersistence(object):
                     f.write(sql)
 
     def save_conversation(self, conversation):
-        HKs = 0 if conversation.keys['HKs'] is None else b2a(conversation.keys['HKs']).strip()
-        HKr = 0 if conversation.keys['HKr'] is None else b2a(conversation.keys['HKr']).strip()
-        CKs = 0 if conversation.keys['CKs'] is None else b2a(conversation.keys['CKs']).strip()
-        CKr = 0 if conversation.keys['CKr'] is None else b2a(conversation.keys['CKr']).strip()
-        DHIr = 0 if conversation.keys['DHIr'] is None else b2a(conversation.keys['DHIr']).strip()
-        DHRs_priv = 0 if conversation.keys['DHRs_priv'] is None else b2a(conversation.keys['DHRs_priv']).strip()
-        DHRs = 0 if conversation.keys['DHRs'] is None else b2a(conversation.keys['DHRs']).strip()
-        DHRr = 0 if conversation.keys['DHRr'] is None else b2a(conversation.keys['DHRr']).strip()
+        HKs = 0 if conversation.keys['HKs'] is None else b2a(conversation.keys['HKs'])
+        HKr = 0 if conversation.keys['HKr'] is None else b2a(conversation.keys['HKr'])
+        CKs = 0 if conversation.keys['CKs'] is None else b2a(conversation.keys['CKs'])
+        CKr = 0 if conversation.keys['CKr'] is None else b2a(conversation.keys['CKr'])
+        DHIr = 0 if conversation.keys['DHIr'] is None else b2a(conversation.keys['DHIr'])
+        DHRs_priv = 0 if conversation.keys['DHRs_priv'] is None else b2a(conversation.keys['DHRs_priv'])
+        DHRs = 0 if conversation.keys['DHRs'] is None else b2a(conversation.keys['DHRs'])
+        DHRr = 0 if conversation.keys['DHRr'] is None else b2a(conversation.keys['DHRr'])
         ratchet_flag = 1 if conversation.ratchet_flag else 0
         mode = 1 if conversation.mode else 0
         with self.db as db:
@@ -756,20 +763,20 @@ class SqlitePersistence(object):
                         ?, ?, ?)''', (
                     conversation.name,
                     conversation.other_name,
-                    b2a(conversation.keys['RK']).strip(),
+                    b2a(conversation.keys['RK']),
                     HKs,
                     HKr,
-                    b2a(conversation.keys['NHKs']).strip(),
-                    b2a(conversation.keys['NHKr']).strip(),
+                    b2a(conversation.keys['NHKs']),
+                    b2a(conversation.keys['NHKr']),
                     CKs,
                     CKr,
-                    b2a(conversation.keys['DHIs_priv']).strip(),
-                    b2a(conversation.keys['DHIs']).strip(),
+                    b2a(conversation.keys['DHIs_priv']),
+                    b2a(conversation.keys['DHIs']),
                     DHIr,
                     DHRs_priv,
                     DHRs,
                     DHRr,
-                    b2a(conversation.keys['CONVid']).strip(),
+                    b2a(conversation.keys['CONVid']),
                     conversation.ns,
                     conversation.nr,
                     conversation.pns,
@@ -826,6 +833,20 @@ class SqlitePersistence(object):
             # if no matches
             return None
 
+    def delete_conversation(self, conversation):
+        with self.db as db:
+            db.execute('''
+                DELETE FROM
+                    skipped_mk
+                WHERE
+                    to_identity = ?''', (conversation.other_name,))
+            db.execute('''
+                DELETE FROM
+                    conversations
+                WHERE
+                    other_identity = ?''', (conversation.other_name,))
+        self.write_db()
+
     def get_other_names(self, name):
         with self.db as db:
             rows = db.execute('''
@@ -838,6 +859,14 @@ class SqlitePersistence(object):
             return [row['other_identity'] for row in rows]
 
 
+def a2b(a):
+    return Base64Encoder.decode(a)
+
+
+def b2a(b):
+    return Base64Encoder.encode(b)
+
+
 def hash_(data):
     return sha256(data).decode('hex')
 
@@ -846,17 +875,18 @@ def kdf(secret, salt):
     return pbkdf2(secret, salt, rounds=10, prf='hmac-sha256')
 
 
+Keypair = namedtuple('Keypair', 'priv pub')
+
+
 def generate_keypair():
     privkey = PrivateKey.generate()
-    pubkey = privkey.public_key
-    return privkey._private_key, pubkey._public_key
+    return Keypair(bytes(privkey), bytes(privkey.public_key))
 
 
 def generate_dh(a, b):
     a = PrivateKey(a)
     b = PublicKey(b)
-    key = Box(a, b)
-    return key._shared_key
+    return bytes(Box(a, b))
 
 
 def generate_3dh(a, a0, b, b0, mode=ALICE_MODE):
@@ -873,7 +903,7 @@ def generate_3dh(a, a0, b, b0, mode=ALICE_MODE):
 def encrypt_symmetric(key, plaintext):
     nonce = nacl.utils.random(nacl.secret.SecretBox.NONCE_SIZE)
     box = nacl.secret.SecretBox(key)
-    return nonce + box.encrypt(plaintext, nonce).ciphertext
+    return bytes(box.encrypt(plaintext, nonce))
 
 
 def decrypt_symmetric(key, ciphertext):
