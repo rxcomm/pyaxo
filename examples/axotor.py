@@ -113,6 +113,13 @@ TOR_CONTROL_PASSWORD        = 'axotor'
 TOR_CONTROL_HASHED_PASSWORD = \
     '16:0DF8A51D5BB7A97160265FEDD732D47AB07FC143446943D92C2C584673'
 
+# An attempt to limit the damage from this bug in curses:
+# https://bugs.python.org/issue13051
+# The input textbox is 8 rows high. So assuming a maximum
+# terminal width of 512 columns, we arrive at 8x512=4096.
+# Most terminal windows should be smaller than this.
+sys.setrecursionlimit(4096)
+
 @contextmanager
 def socketcontext(*args, **kwargs):
     s = socket.socket(*args, **kwargs)
@@ -145,9 +152,16 @@ class _Textbox(Textbox):
         Textbox.__init__(*args, **kwargs)
 
     def do_command(self, ch):
+        if ch == curses.KEY_RESIZE:
+            resizeWindows()
+            for i in range(8): # delete 8 input window lines
+                Textbox.do_command(self, 1)
+                Textbox.do_command(self, 11)
+                Textbox.do_command(self, 16)
+            return Textbox.do_command(self, 7)
         if ch == 10: # Enter
             return 0
-        if ch == 127: # Enter
+        if ch == 127: # Backspace
             return 8
         return Textbox.do_command(self, ch)
 
@@ -166,7 +180,7 @@ def validator(ch):
         sleep(0.01) # let receiveThread in if necessary
         winlock.acquire()
 
-def windows():
+def windowFactory():
     stdscr = curses.initscr()
     curses.noecho()
     curses.start_color()
@@ -194,6 +208,29 @@ def closeWindows(stdscr):
     stdscr.keypad(0)
     curses.echo()
     curses.endwin()
+
+def resizeWindows():
+    global stdscr, input_win, output_win, textpad, text_color
+    temp_win = output_win
+    yold, xold = output_win.getmaxyx()
+    stdscr, input_win, output_win = windowFactory()
+    stdscr.noutrefresh()
+    ynew, xnew = output_win.getmaxyx()
+    if yold > ynew:
+        sminrow = yold - ynew
+        dminrow = 0
+    else:
+        sminrow = 0
+        dminrow = ynew - yold
+    temp_win.overwrite(output_win, sminrow, 0, dminrow, 0, ynew-1, xnew-1)
+    del temp_win
+    output_win.move(ynew-1, 0)
+    output_win.noutrefresh()
+    input_win.attron(text_color)
+    input_win.noutrefresh()
+    curses.doupdate()
+    textpad = _Textbox(input_win, insert_mode=True)
+    textpad.stripspaces = True
 
 def usage():
     print 'Usage: ' + sys.argv[0] + ' -(s,c)'
@@ -339,8 +376,8 @@ def downloadThread(onion, command, output_win):
         output_win.refresh()
         winlock.release()
 
-def receiveThread(sock, stdscr, input_win, output_win, text_color, onion):
-    global screen_needs_update, a
+def receiveThread(sock, text_color, onion):
+    global screen_needs_update, a, stdscr, input_win, output_win
     while True:
         data = ''
         while data[-3:] != 'EOP':
@@ -379,8 +416,10 @@ def receiveThread(sock, stdscr, input_win, output_win, text_color, onion):
         winlock.release()
 
 def chatThread(sock, smp_match, onion):
-    global screen_needs_update, a
-    stdscr, input_win, output_win = windows()
+    global screen_needs_update, a, stdscr, input_win, output_win, textpad, text_color
+    stdscr, input_win, output_win = windowFactory()
+    y, x = output_win.getmaxyx()
+    output_win.move(y-1, 0)
     if smp_match:
         text_color = curses.color_pair(2) # green
     else:
@@ -390,40 +429,46 @@ def chatThread(sock, smp_match, onion):
     textpad = _Textbox(input_win, insert_mode=True)
     textpad.stripspaces = True
     t = threading.Thread(target=receiveThread,
-                         args=(sock, stdscr, input_win,
-                               output_win, text_color, onion))
+                         args=(sock, text_color, onion))
     t.daemon = True
     t.start()
     try:
         while True:
             winlock.acquire()
             data = textpad.edit(validator)
-            input_win.clear()
-            input_win.addstr(NICK+':> ')
-            output_win.addstr(data.replace('\n', '') + '\n', text_color)
-            output_win.noutrefresh()
-            input_win.move(0, len(NICK)+3)
-            input_win.cursyncup()
-            input_win.noutrefresh()
-            screen_needs_update = True
-            data = data.replace('\n', '') + '\n'
-            try:
-                cryptlock.acquire()
-                sock.send(a.encrypt(data) + 'EOP')
-                cryptlock.release()
-            except socket.error:
-                input_win.addstr('Disconnected')
-                input_win.refresh()
-                closeWindows(stdscr)
-                sys.exit()
-            if NICK+':> .quit' in data:
-                closeWindows(stdscr)
-                print 'Notifying '+OTHER_NICK+' that you are quitting...'
-                sys.exit()
-            if NICK+':> .send' in data:
-                t = threading.Thread(target=uploadThread,
-                                     args=(onion,data,output_win))
-                t.start()
+            if len(data) != 0 and chr(127) not in data:
+                input_win.clear()
+                input_win.addstr(NICK+':> ')
+                output_win.addstr(data.replace('\n', '') + '\n', text_color)
+                output_win.noutrefresh()
+                input_win.move(0, len(NICK)+3)
+                input_win.cursyncup()
+                input_win.noutrefresh()
+                screen_needs_update = True
+                data = data.replace('\n', '') + '\n'
+                try:
+                    cryptlock.acquire()
+                    sock.send(a.encrypt(data) + 'EOP')
+                    cryptlock.release()
+                except socket.error:
+                    input_win.addstr('Disconnected')
+                    input_win.refresh()
+                    closeWindows(stdscr)
+                    sys.exit()
+                if NICK+':> .quit' in data:
+                    closeWindows(stdscr)
+                    print 'Notifying '+OTHER_NICK+' that you are quitting...'
+                    sys.exit()
+                elif NICK+':> .send' in data:
+                    t = threading.Thread(target=uploadThread,
+                                         args=(onion,data,output_win))
+                    t.start()
+            else:
+                input_win.addstr(NICK+':> ')
+                input_win.move(0, len(NICK)+3)
+                input_win.cursyncup()
+                input_win.noutrefresh()
+                screen_needs_update = True
             winlock.release()
             if screen_needs_update:
                 curses.doupdate()

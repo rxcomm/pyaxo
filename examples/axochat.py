@@ -1,5 +1,8 @@
 #!/usr/bin/env python
 
+import os
+import tempfile
+import signal
 import hashlib
 import socket
 import threading
@@ -51,6 +54,13 @@ You should have received a copy of the GNU General Public License
 along with this program. If not, see <http://www.gnu.org/licenses/>.
 """
 
+# An attempt to limit the damage from this bug in curses:
+# https://bugs.python.org/issue13051
+# The input textbox is 8 rows high. So assuming a maximum
+# terminal width of 512 columns, we arrive at 8x512=4096.
+# Most terminal windows should be smaller than this.
+sys.setrecursionlimit(4096)
+
 @contextmanager
 def socketcontext(*args, **kwargs):
     s = socket.socket(*args, **kwargs)
@@ -70,9 +80,16 @@ class _Textbox(Textbox):
         Textbox.__init__(*args, **kwargs)
 
     def do_command(self, ch):
+        if ch == curses.KEY_RESIZE:
+            resizeWindows()
+            for i in range(8): # delete 8 input window lines
+                Textbox.do_command(self, 1)
+                Textbox.do_command(self, 11)
+                Textbox.do_command(self, 16)
+            return Textbox.do_command(self, 7)
         if ch == 10: # Enter
             return 0
-        if ch == 127: # Enter
+        if ch == 127: # Backspace
             return 8
         return Textbox.do_command(self, ch)
 
@@ -91,7 +108,7 @@ def validator(ch):
         sleep(0.01) # let receiveThread in if necessary
         lock.acquire()
 
-def windows():
+def windowFactory():
     stdscr = curses.initscr()
     curses.noecho()
     curses.start_color()
@@ -119,14 +136,36 @@ def closeWindows(stdscr):
     curses.echo()
     curses.endwin()
 
+def resizeWindows():
+    global stdscr, input_win, output_win, textpad
+    temp_win = output_win
+    yold, xold = output_win.getmaxyx()
+    stdscr, input_win, output_win = windowFactory()
+    stdscr.noutrefresh()
+    ynew, xnew = output_win.getmaxyx()
+    if yold > ynew:
+        sminrow = yold - ynew
+        dminrow = 0
+    else:
+        sminrow = 0
+        dminrow = ynew - yold
+    temp_win.overwrite(output_win, sminrow, 0, dminrow, 0, ynew-1, xnew-1)
+    del temp_win
+    output_win.move(ynew-1, 0)
+    output_win.noutrefresh()
+    input_win.noutrefresh()
+    curses.doupdate()
+    textpad = _Textbox(input_win, insert_mode=True)
+    textpad.stripspaces = True
+
 def usage():
     print 'Usage: ' + sys.argv[0] + ' -(s,c)'
     print ' -s: start a chat in server mode'
     print ' -c: start a chat in client mode'
     exit()
 
-def receiveThread(sock, stdscr, input_win, output_win):
-    global screen_needs_update, a
+def receiveThread(sock):
+    global screen_needs_update, a, stdscr, input_win, output_win
     while True:
         data = ''
         while data[-3:] != 'EOP':
@@ -152,12 +191,14 @@ def receiveThread(sock, stdscr, input_win, output_win):
         lock.release()
 
 def chatThread(sock):
-    global screen_needs_update, a
-    stdscr, input_win, output_win = windows()
+    global screen_needs_update, a, stdscr, input_win, output_win, textpad
+    stdscr, input_win, output_win = windowFactory()
+    y, x = output_win.getmaxyx()
+    output_win.move(y-1, 0)
     input_win.addstr(0, 0, NICK + ':> ')
     textpad = _Textbox(input_win, insert_mode=True)
     textpad.stripspaces = True
-    t = threading.Thread(target=receiveThread, args=(sock, stdscr, input_win,output_win))
+    t = threading.Thread(target=receiveThread, args=(sock,))
     t.daemon = True
     t.start()
     try:
@@ -167,23 +208,30 @@ def chatThread(sock):
             if NICK+':> .quit' in data:
                 closeWindows(stdscr)
                 sys.exit()
-            input_win.clear()
-            input_win.addstr(NICK+':> ')
-            output_win.addstr(data.replace('\n', '') + '\n', curses.color_pair(3))
-            output_win.noutrefresh()
-            input_win.move(0, len(NICK)+3)
-            input_win.cursyncup()
-            input_win.noutrefresh()
-            screen_needs_update = True
-            data = data.replace('\n', '') + '\n'
-            try:
-                sock.send(a.encrypt(data) + 'EOP')
-            except socket.error:
-                input_win.addstr('Disconnected')
-                input_win.refresh()
-                closeWindows(stdscr)
-                sys.exit()
-            sleep(0.01) # write time for axo db
+            elif len(data) != 0 and chr(127) not in data:
+                input_win.clear()
+                input_win.addstr(NICK+':> ')
+                output_win.addstr(data.replace('\n', '') + '\n', curses.color_pair(3))
+                output_win.noutrefresh()
+                input_win.move(0, len(NICK)+3)
+                input_win.cursyncup()
+                input_win.noutrefresh()
+                screen_needs_update = True
+                data = data.replace('\n', '') + '\n'
+                try:
+                    sock.send(a.encrypt(data) + 'EOP')
+                except socket.error:
+                    input_win.addstr('Disconnected')
+                    input_win.refresh()
+                    closeWindows(stdscr)
+                    sys.exit()
+                sleep(0.01) # write time for axo db
+            else:
+                input_win.addstr(NICK+':> ')
+                input_win.move(0, len(NICK)+3)
+                input_win.cursyncup()
+                input_win.noutrefresh()
+                screen_needs_update = True
             lock.release()
     except KeyboardInterrupt:
         closeWindows(stdscr)
@@ -247,7 +295,8 @@ if __name__ == '__main__':
                       mode=True,
                       other_ratchetKey=a2b(rkey))
 
-        HOST = raw_input('Enter the server: ')
+        HOST = raw_input('Enter the server (default localhost): ')
+        if HOST == '': HOST = 'localhost'
         print 'Connecting to ' + HOST + '...'
         with socketcontext(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((HOST, PORT))
