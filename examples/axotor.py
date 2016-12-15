@@ -240,16 +240,17 @@ def usage():
     print 'send file with .send <filename>'
     sys.exit()
 
-def reportTransferSocketError(output_win):
+def reportTransferSocketError():
+    global output_win
+    winlock.acquire()
     output_win.addstr('Socket error: Something went wrong.\n',
                        curses.color_pair(1))
-    winlock.acquire()
     output_win.refresh()
     winlock.release()
     sys.exit()
 
-def sendFile(s, filename, abort, output_win):
-    global a
+def sendFile(s, filename, abort):
+    global a, output_win
     if abort:
         cryptlock.acquire()
         data = a.encrypt('ABORT') + 'EOP'
@@ -261,9 +262,9 @@ def sendFile(s, filename, abort, output_win):
             pass
         sys.exit()
     else:
-        output_win.addstr('Sending file %s...\n' % filename, 
-                           curses.color_pair(3))
         winlock.acquire()
+        output_win.addstr('Sending file %s...\n' % filename,
+                           curses.color_pair(3))
         output_win.refresh()
         winlock.release()
     with open(filename, 'rb') as f:
@@ -279,16 +280,16 @@ def sendFile(s, filename, abort, output_win):
     except socket.error:
         pass
 
-def receiveFile(s, filename, output_win):
-    global a
+def receiveFile(s, filename):
+    global a, output_win
     data = ''
     while data[-3:] != 'EOP':
         rcv = s.recv(4096)
         data = data + rcv
         if not rcv:
+            winlock.acquire()
             output_win.addstr('Receiving %s aborted...\n' % filename,
                                curses.color_pair(1))
-            winlock.acquire()
             output_win.refresh()
             winlock.release()
             try:
@@ -300,9 +301,9 @@ def receiveFile(s, filename, output_win):
     data = a.decrypt(data[:-3])
     cryptlock.release()
     if data == 'ABORT':
+        winlock.acquire()
         output_win.addstr('Receiving %s aborted...\n' % filename,
                            curses.color_pair(1))
-        winlock.acquire()
         output_win.refresh()
         winlock.release()
         sys.exit()
@@ -313,14 +314,15 @@ def receiveFile(s, filename, output_win):
     except socket.error:
         pass
 
-def uploadThread(onion, command, output_win):
+def uploadThread(onion, command):
+    global output_win
     with transferlock:
         filename = command.split(':> .send ')[1].strip()
         filename = os.path.expanduser(filename)
         if not os.path.exists(filename) or os.path.isdir(filename):
+            winlock.acquire()
             output_win.addstr('File %s does not exist...\n' % filename,
                                curses.color_pair(1))
-            winlock.acquire()
             output_win.refresh()
             winlock.release()
             abort = True
@@ -333,26 +335,27 @@ def uploadThread(onion, command, output_win):
                     s.listen(1)
                     conn, addr = s.accept()
                 except socket.error:
-                    reportTransferSocketError(output_win)
-                sendFile(conn, filename, abort, output_win)
+                    reportTransferSocketError()
+                sendFile(conn, filename, abort)
         else:
             with torcontext() as s:
                 try:
                     s.connect((onion, CLIENT_FILE_TX_PORT))
                 except socket.error:
-                    reportTransferSocketError(output_win)
-                sendFile(s, filename, abort, output_win)
-        output_win.addstr('%s sent...\n' % filename, curses.color_pair(3))
+                    reportTransferSocketError()
+                sendFile(s, filename, abort)
         winlock.acquire()
+        output_win.addstr('%s sent...\n' % filename, curses.color_pair(3))
         output_win.refresh()
         winlock.release()
 
-def downloadThread(onion, command, output_win):
+def downloadThread(onion, command):
+    global output_win
     with transferlock:
         filename = command.split(':> .send ')[1].strip().split('/').pop()
+        winlock.acquire()
         output_win.addstr('Receiving file %s...\n' % filename,
                            curses.color_pair(3))
-        winlock.acquire()
         output_win.refresh()
         winlock.release()
         if onion is None:
@@ -362,17 +365,17 @@ def downloadThread(onion, command, output_win):
                     s.listen(1)
                     conn, addr = s.accept()
                 except socket.error:
-                    reportTransferSocketError(output_win)
-                receiveFile(conn, filename, output_win)
+                    reportTransferSocketError()
+                receiveFile(conn, filename)
         else:
             with torcontext() as s:
                 try:
                     s.connect((onion, SERVER_FILE_TX_PORT))
                 except socket.error:
-                    reportTransferSocketError(output_win)
-                receiveFile(s, filename, output_win)
-        output_win.addstr('%s received...\n' % filename, curses.color_pair(3))
+                    reportTransferSocketError()
+                receiveFile(s, filename)
         winlock.acquire()
+        output_win.addstr('%s received...\n' % filename, curses.color_pair(3))
         output_win.refresh()
         winlock.release()
 
@@ -404,7 +407,7 @@ def receiveThread(sock, text_color, onion):
                 os._exit(0)
             if ':> .send' in data:
                 t = threading.Thread(target=downloadThread,
-                                     args=(onion,data,output_win))
+                                     args=(onion,data))
                 t.start()
                 data = ''
             output_win.addstr(data)
@@ -461,7 +464,7 @@ def chatThread(sock, smp_match, onion):
                     sys.exit()
                 elif NICK+':> .send' in data:
                     t = threading.Thread(target=uploadThread,
-                                         args=(onion,data,output_win))
+                                         args=(onion,data))
                     t.start()
             else:
                 input_win.addstr(NICK+':> ')
