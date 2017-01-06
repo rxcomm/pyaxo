@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-import hashlib
 import socket
 import threading
 import sys
@@ -9,6 +8,7 @@ import curses
 import socks
 import stem.process
 import wh
+import random
 from binascii import a2b_base64 as a2b
 from binascii import b2a_base64 as b2a
 from getpass import getpass
@@ -17,7 +17,7 @@ from stem.control import Controller
 from stem.util import term
 from curses.textpad import Textbox
 from contextlib import contextmanager
-from pyaxo import Axolotl
+from pyaxo import Axolotl, hash_
 from time import sleep
 
 """
@@ -80,6 +80,11 @@ Usage:
 
 3. .quit at the chat prompt will quit (don't forget the "dot")
 
+4. .send <filename> will send a file to the other party. The file
+   can be from anywhere in the filesystem on the sending computer
+   (~/a/b/<filename> supported) and will be stored in the receiver's
+   local directory.
+
 Axochat requires the Axolotl module at https://github.com/rxcomm/pyaxo
 
 Copyright (C) 2015-2016 by David R. Andersen <k0rx@RXcomm.net>
@@ -102,9 +107,18 @@ TOR_SERVER_PORT             = 9054
 TOR_SERVER_CONTROL_PORT     = 9055
 TOR_CLIENT_PORT             = 9154
 TOR_CLIENT_CONTROL_PORT     = 9155
+CLIENT_FILE_TX_PORT         = 2000
+SERVER_FILE_TX_PORT         = 2001
 TOR_CONTROL_PASSWORD        = 'axotor'
 TOR_CONTROL_HASHED_PASSWORD = \
     '16:0DF8A51D5BB7A97160265FEDD732D47AB07FC143446943D92C2C584673'
+
+# An attempt to limit the damage from this bug in curses:
+# https://bugs.python.org/issue13051
+# The input textbox is 8 rows high. So assuming a maximum
+# terminal width of 512 columns, we arrive at 8x512=4096.
+# Most terminal windows should be smaller than this.
+sys.setrecursionlimit(4096)
 
 @contextmanager
 def socketcontext(*args, **kwargs):
@@ -138,9 +152,16 @@ class _Textbox(Textbox):
         Textbox.__init__(*args, **kwargs)
 
     def do_command(self, ch):
+        if ch == curses.KEY_RESIZE:
+            resizeWindows()
+            for i in range(8): # delete 8 input window lines
+                Textbox.do_command(self, 1)
+                Textbox.do_command(self, 11)
+                Textbox.do_command(self, 16)
+            return Textbox.do_command(self, 7)
         if ch == 10: # Enter
             return 0
-        if ch == 127: # Enter
+        if ch == 127: # Backspace
             return 8
         return Textbox.do_command(self, ch)
 
@@ -155,17 +176,18 @@ def validator(ch):
             screen_needs_update = False
         return ch
     finally:
-        lock.release()
+        winlock.release()
         sleep(0.01) # let receiveThread in if necessary
-        lock.acquire()
+        winlock.acquire()
 
-def windows():
+def windowFactory():
     stdscr = curses.initscr()
     curses.noecho()
     curses.start_color()
     curses.use_default_colors()
     curses.init_pair(1, curses.COLOR_RED, -1)
     curses.init_pair(2, curses.COLOR_GREEN, -1)
+    curses.init_pair(3, curses.COLOR_YELLOW, -1)
     curses.cbreak()
     curses.curs_set(1)
     (sizey, sizex) = stdscr.getmaxyx()
@@ -187,14 +209,167 @@ def closeWindows(stdscr):
     curses.echo()
     curses.endwin()
 
+def resizeWindows():
+    global stdscr, input_win, output_win, textpad, text_color
+    temp_win = output_win
+    yold, xold = output_win.getmaxyx()
+    stdscr, input_win, output_win = windowFactory()
+    stdscr.noutrefresh()
+    ynew, xnew = output_win.getmaxyx()
+    if yold > ynew:
+        sminrow = yold - ynew
+        dminrow = 0
+    else:
+        sminrow = 0
+        dminrow = ynew - yold
+    temp_win.overwrite(output_win, sminrow, 0, dminrow, 0, ynew-1, xnew-1)
+    del temp_win
+    output_win.move(ynew-1, 0)
+    output_win.noutrefresh()
+    input_win.attron(text_color)
+    input_win.noutrefresh()
+    curses.doupdate()
+    textpad = _Textbox(input_win, insert_mode=True)
+    textpad.stripspaces = True
+
 def usage():
     print 'Usage: ' + sys.argv[0] + ' -(s,c)'
     print ' -s: start a chat in server mode'
     print ' -c: start a chat in client mode'
+    print 'quit with .quit'
+    print 'send file with .send <filename>'
+    sys.exit(1)
+
+def reportTransferSocketError():
+    global output_win
+    with winlock:
+        output_win.addstr('Socket error: Something went wrong.\n',
+                           curses.color_pair(1))
+        output_win.refresh()
     sys.exit()
 
-def receiveThread(sock, stdscr, input_win, output_win, text_color):
-    global screen_needs_update, a
+def sendFile(s, filename, abort):
+    global axolotl, output_win
+    if abort:
+        with cryptlock:
+            data = axolotl.encrypt('ABORT') + 'EOP'
+        s.send(data)
+        try:
+            s.recv(3, socket.MSG_WAITALL)
+        except socket.error:
+            pass
+        sys.exit()
+    else:
+        with winlock:
+            output_win.addstr('Sending file %s...\n' % filename,
+                               curses.color_pair(3))
+            output_win.refresh()
+    with open(filename, 'rb') as f:
+        data = f.read()
+        if len(data) == 0:
+            data = 'Sender tried to send a null file!'
+        with cryptlock:
+            data = axolotl.encrypt(data)
+        s.send(data + 'EOP')
+    try:
+        s.recv(3, socket.MSG_WAITALL)
+    except socket.error:
+        pass
+
+def receiveFile(s, filename):
+    global axolotl, output_win
+    data = ''
+    while data[-3:] != 'EOP':
+        rcv = s.recv(4096)
+        data = data + rcv
+        if not rcv:
+            with winlock:
+                output_win.addstr('Receiving %s aborted...\n' % filename,
+                                   curses.color_pair(1))
+                output_win.refresh()
+            try:
+                s.send('EOP')
+            except socket.error:
+                pass
+            sys.exit()
+    with cryptlock:
+        data = axolotl.decrypt(data[:-3])
+    if data == 'ABORT':
+        with winlock:
+            output_win.addstr('Receiving %s aborted...\n' % filename,
+                               curses.color_pair(1))
+            output_win.refresh()
+        sys.exit()
+    with open(filename, 'wb') as f:
+        f.write(data)
+    try:
+        s.send('EOP')
+    except socket.error:
+        pass
+
+def uploadThread(onion, command):
+    global output_win
+    with transferlock:
+        filename = command.split(':> .send ')[1].strip()
+        filename = os.path.expanduser(filename)
+        if not os.path.exists(filename) or os.path.isdir(filename):
+            with winlock:
+                output_win.addstr('File %s does not exist...\n' % filename,
+                                   curses.color_pair(1))
+                output_win.refresh()
+            abort = True
+        else:
+            abort = False
+        if onion is None:
+            with socketcontext(socket.AF_INET, socket.SOCK_STREAM) as s:
+                try:
+                    s.bind(('localhost', SERVER_FILE_TX_PORT))
+                    s.listen(1)
+                    conn, addr = s.accept()
+                except socket.error:
+                    reportTransferSocketError()
+                sendFile(conn, filename, abort)
+        else:
+            with torcontext() as s:
+                try:
+                    s.connect((onion, CLIENT_FILE_TX_PORT))
+                except socket.error:
+                    reportTransferSocketError()
+                sendFile(s, filename, abort)
+        with winlock:
+            output_win.addstr('%s sent...\n' % filename, curses.color_pair(3))
+            output_win.refresh()
+
+def downloadThread(onion, command):
+    global output_win
+    with transferlock:
+        filename = command.split(':> .send ')[1].strip().split('/').pop()
+        with winlock:
+            output_win.addstr('Receiving file %s...\n' % filename,
+                               curses.color_pair(3))
+            output_win.refresh()
+        if onion is None:
+            with socketcontext(socket.AF_INET, socket.SOCK_STREAM) as s:
+                try:
+                    s.bind(('localhost', CLIENT_FILE_TX_PORT))
+                    s.listen(1)
+                    conn, addr = s.accept()
+                except socket.error:
+                    reportTransferSocketError()
+                receiveFile(conn, filename)
+        else:
+            with torcontext() as s:
+                try:
+                    s.connect((onion, SERVER_FILE_TX_PORT))
+                except socket.error:
+                    reportTransferSocketError()
+                receiveFile(s, filename)
+        with winlock:
+           output_win.addstr('%s received...\n' % filename, curses.color_pair(3))
+           output_win.refresh()
+
+def receiveThread(sock, text_color, onion):
+    global screen_needs_update, a, stdscr, input_win, output_win
     while True:
         data = ''
         while data[-3:] != 'EOP':
@@ -207,27 +382,35 @@ def receiveThread(sock, stdscr, input_win, output_win, text_color):
                 sys.exit()
             data = data + rcv
         data_list = data.split('EOP')
-        lock.acquire()
-        (cursory, cursorx) = input_win.getyx()
-        for data in data_list:
-            if data != '':
-                data = a.decrypt(data)
+        with winlock:
+            (cursory, cursorx) = input_win.getyx()
+            for data in data_list:
+                if data != '':
+                    with cryptlock:
+                        data = axolotl.decrypt(data)
+                if ':> .quit' in data:
+                    closeWindows(stdscr)
+                    print 'The other party exited the chat...'
+                    sleep(1.5)
+                    os._exit(0)
+                if ':> .send ' in data:
+                    t = threading.Thread(target=downloadThread,
+                                         args=(onion,data))
+                    t.start()
+                    data = ''
                 output_win.addstr(data)
-            if OTHER_NICK+':> .quit' in data:
-                closeWindows(stdscr)
-                print OTHER_NICK+' exited the chat...'
-                sleep(1.5)
-                os._exit(0)
-        input_win.move(cursory, cursorx)
-        input_win.cursyncup()
-        input_win.noutrefresh()
-        output_win.noutrefresh()
-        screen_needs_update = True
-        lock.release()
+            input_win.move(cursory, cursorx)
+            input_win.cursyncup()
+            input_win.noutrefresh()
+            output_win.noutrefresh()
+            screen_needs_update = True
 
-def chatThread(sock, smp_match):
-    global screen_needs_update, a
-    stdscr, input_win, output_win = windows()
+def chatThread(sock, smp_match, onion):
+    global screen_needs_update, axolotl, stdscr, input_win, \
+           output_win, textpad, text_color
+    stdscr, input_win, output_win = windowFactory()
+    y, x = output_win.getmaxyx()
+    output_win.move(y-1, 0)
     if smp_match:
         text_color = curses.color_pair(2) # green
     else:
@@ -237,35 +420,48 @@ def chatThread(sock, smp_match):
     textpad = _Textbox(input_win, insert_mode=True)
     textpad.stripspaces = True
     t = threading.Thread(target=receiveThread,
-                         args=(sock, stdscr, input_win,
-                               output_win, text_color))
+                         args=(sock, text_color, onion))
     t.daemon = True
     t.start()
     try:
         while True:
-            lock.acquire()
-            data = textpad.edit(validator)
-            input_win.clear()
-            input_win.addstr(NICK+':> ')
-            output_win.addstr(data.replace('\n', '') + '\n', text_color)
-            output_win.noutrefresh()
-            input_win.move(0, len(NICK)+3)
-            input_win.cursyncup()
-            input_win.noutrefresh()
-            screen_needs_update = True
-            data = data.replace('\n', '') + '\n'
-            try:
-                sock.send(a.encrypt(data) + 'EOP')
-            except socket.error:
-                input_win.addstr('Disconnected')
-                input_win.refresh()
-                closeWindows(stdscr)
-                sys.exit()
-            if NICK+':> .quit' in data:
-                closeWindows(stdscr)
-                print 'Notifying '+OTHER_NICK+' that you are quitting...'
-                sys.exit()
-            lock.release()
+            with winlock:
+                data = textpad.edit(validator)
+                if len(data) != 0 and chr(127) not in data:
+                    input_win.clear()
+                    input_win.addstr(NICK+':> ')
+                    output_win.addstr(data.replace('\n', '') + '\n', text_color)
+                    output_win.noutrefresh()
+                    input_win.move(0, len(NICK)+3)
+                    input_win.cursyncup()
+                    input_win.noutrefresh()
+                    screen_needs_update = True
+                    data = data.replace('\n', '') + '\n'
+                    try:
+                        with cryptlock:
+                            sock.send(axolotl.encrypt(data) + 'EOP')
+                    except socket.error:
+                        input_win.addstr('Disconnected')
+                        input_win.refresh()
+                        closeWindows(stdscr)
+                        sys.exit()
+                    if NICK+':> .quit' in data:
+                        closeWindows(stdscr)
+                        print 'Notifying the other party that you are quitting...'
+                        sys.exit()
+                    elif NICK+':> .send' in data:
+                        t = threading.Thread(target=uploadThread,
+                                             args=(onion,data))
+                        t.start()
+                else:
+                    input_win.addstr(NICK+':> ')
+                    input_win.move(0, len(NICK)+3)
+                    input_win.cursyncup()
+                    input_win.noutrefresh()
+                    screen_needs_update = True
+            if screen_needs_update:
+                curses.doupdate()
+                screen_needs_update = False
     except KeyboardInterrupt:
         closeWindows(stdscr)
 
@@ -313,7 +509,9 @@ def ephemeralHiddenService():
                                       port=TOR_SERVER_CONTROL_PORT)
     controller.authenticate(password=TOR_CONTROL_PASSWORD)
     try:
-        hs = controller.create_ephemeral_hidden_service(PORT,
+        hs = controller.create_ephemeral_hidden_service([PORT,
+                                                        CLIENT_FILE_TX_PORT,
+                                                        SERVER_FILE_TX_PORT],
                                                         basic_auth={'axotor': None},
                                                         await_publication=True)
     except Exception as e:
@@ -330,7 +528,7 @@ def credentialsReceive(mkey):
     return wh.receive(unicode(mkey), TOR_CLIENT_PORT)
 
 def smptest(secret, sock, is_server):
-    global a
+    global axolotl
     # Create an SMP object with the calculated secret
     smp = SMP(secret)
 
@@ -338,18 +536,18 @@ def smptest(secret, sock, is_server):
         # Do the SMP protocol
         buffer = sock.recv(2435, socket.MSG_WAITALL)
         padlength = ord(buffer[-1:])
-        buffer = a.decrypt(buffer[:-padlength])
+        buffer = axolotl.decrypt(buffer[:-padlength])
         buffer = smp.step2(buffer)
-        buffer = a.encrypt(buffer)
+        buffer = axolotl.encrypt(buffer)
         padlength = 4535-len(buffer)
         buffer = buffer+padlength*chr(padlength) # pad to fixed length
         sock.send(buffer)
 
         buffer = sock.recv(3465, socket.MSG_WAITALL)
         padlength = ord(buffer[-1:])
-        buffer = a.decrypt(buffer[:-padlength])
+        buffer = axolotl.decrypt(buffer[:-padlength])
         buffer = smp.step4(buffer)
-        buffer = a.encrypt(buffer)
+        buffer = axolotl.encrypt(buffer)
         padlength = 1365-len(buffer)
         buffer = buffer+padlength*chr(padlength) # pad to fixed length
         sock.send(buffer)
@@ -357,23 +555,23 @@ def smptest(secret, sock, is_server):
     else:
         # Do the SMP protocol
         buffer = smp.step1()
-        buffer = a.encrypt(buffer)
+        buffer = axolotl.encrypt(buffer)
         padlength = 2435-len(buffer)
         buffer = buffer+padlength*chr(padlength) # pad to fixed length
         sock.send(buffer)
 
         buffer = sock.recv(4535, socket.MSG_WAITALL)
         padlength = ord(buffer[-1:])
-        buffer = a.decrypt(buffer[:-padlength])
+        buffer = axolotl.decrypt(buffer[:-padlength])
         buffer = smp.step3(buffer)
-        buffer = a.encrypt(buffer)
+        buffer = axolotl.encrypt(buffer)
         padlength = 3465-len(buffer)
         buffer = buffer+padlength*chr(padlength) # pad to fixed length
         sock.send(buffer)
 
         buffer = sock.recv(1365, socket.MSG_WAITALL)
         padlength = ord(buffer[-1:])
-        buffer = a.decrypt(buffer[:-padlength])
+        buffer = axolotl.decrypt(buffer[:-padlength])
         smp.step5(buffer)
 
     # Check if the secrets match
@@ -387,19 +585,19 @@ def smptest(secret, sock, is_server):
     return smp_match
 
 def doSMP(sock, is_server):
-    global a
+    global axolotl
     ans = raw_input('Run SMP authentication step? (y/N)? ')
     if not ans == 'y': ans = 'N'
-    sock.send(a.encrypt(ans))
+    sock.send(axolotl.encrypt(ans))
     data = sock.recv(121, socket.MSG_WAITALL)
-    data = a.decrypt(data)
+    data = axolotl.decrypt(data)
     if ans == 'N' and data == 'y':
-        print 'Other user requested SMP authentication'
+        print 'Other party requested SMP authentication'
     if ans == 'y' or data == 'y':
         print 'Performing per-session SMP authentication...'
         ans = getpass('Enter SMP secret: ')
         print 'Running SMP protocol...'
-        secret = ans + a.state['CONVid']
+        secret = ans + axolotl.state['CONVid']
         smp_match = smptest(secret, sock, is_server)
         if not smp_match:
             ans = raw_input('Continue? (y/N) ')
@@ -408,58 +606,60 @@ def doSMP(sock, is_server):
                 sys.exit()
     else:
         print 'OK - skipping SMP step and assuming ' + \
-               OTHER_NICK + ' is already authenticated...'
+              'the other party is already authenticated...'
         smp_match = True
         sleep(2)
     return smp_match
 
 if __name__ == '__main__':
-    global a
+    global axolotl
     try:
         mode = sys.argv[1]
     except:
         usage()
 
     NICK = raw_input('Enter your nick: ')
-    OTHER_NICK = raw_input('Enter the nick of the other party: ')
-    lock = threading.Lock()
+    OTHER_NICK = 'x'
+    winlock = threading.Lock()
+    transferlock = threading.Lock()
+    cryptlock = threading.Lock()
     screen_needs_update = False
     HOST = '127.0.0.1'
     PORT=50000
     mkey = getpass('What is the masterkey (format: NNN-xxxx)? ')
 
     if mode == '-s':
-        a = Axolotl(NICK,
+        axolotl = Axolotl(NICK,
                     dbname=OTHER_NICK+'.db',
                     dbpassphrase=None,
                     nonthreaded_sql=False)
-        a.createState(other_name=OTHER_NICK,
-                           mkey=hashlib.sha256(mkey).digest(),
+        axolotl.createState(other_name=OTHER_NICK,
+                           mkey=hash_(mkey),
                            mode=False)
         tor_process = tor(TOR_SERVER_PORT,
                           TOR_SERVER_CONTROL_PORT,
                           '/tmp/tor.server',
                           '')
         hs, cookie, onion = ephemeralHiddenService()
-        print 'Exhanging credentials via tor...'
+        print 'Exchanging credentials via tor...'
         if credentialsSend(mkey,
                            cookie,
-                           b2a(a.state['DHRs']).strip(),
+                           b2a(axolotl.state['DHRs']).strip(),
                            onion):
             pass
         else:
             sys.exit(1)
-        print 'Credentials sent, waiting for ' + OTHER_NICK + ' to connect...'
+        print 'Credentials sent, waiting for the other party to connect...'
         with socketcontext(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind((HOST, PORT))
             s.listen(1)
             conn, addr = s.accept()
             print 'Connected...'
             smp_match = doSMP(conn, True)
-            chatThread(conn, smp_match)
+            chatThread(conn, smp_match, None)
 
     elif mode == '-c':
-        a = Axolotl(NICK,
+        axolotl = Axolotl(NICK,
                     dbname=OTHER_NICK+'.db',
                     dbpassphrase=None,
                     nonthreaded_sql=False)
@@ -467,21 +667,25 @@ if __name__ == '__main__':
                           TOR_CLIENT_CONTROL_PORT,
                           '/tmp/tor.client',
                           '')
-        print 'Exhanging credentials via tor...'
+        print 'Exchanging credentials via tor...'
         creds = credentialsReceive(mkey)
+        if not creds:
+            print 'Master Key Mismatch!'
+            print 'Exiting...'
+            sys.exit()
         cookie, rkey, onion = creds.split('___')
         controller = clientController(cookie, onion)
-        a.createState(other_name=OTHER_NICK,
-                      mkey=hashlib.sha256(mkey).digest(),
+        axolotl.createState(other_name=OTHER_NICK,
+                      mkey=hash_(mkey),
                       mode=True,
                       other_ratchetKey=a2b(rkey))
 
-        print 'Credentials received, connecting to ' + OTHER_NICK + '...'
+        print 'Credentials received, connecting to the other party...'
         with torcontext() as s:
             s.connect((onion, PORT))
             print 'Connected...'
             smp_match = doSMP(s, False)
-            chatThread(s, smp_match)
+            chatThread(s, smp_match, onion)
 
     else:
         usage()
