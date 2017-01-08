@@ -449,7 +449,7 @@ def chatThread(sock, smp_match, onion):
                         closeWindows(stdscr)
                         print 'Notifying the other party that you are quitting...'
                         sys.exit()
-                    elif NICK+':> .send' in data:
+                    elif NICK+':> .send ' in data:
                         t = threading.Thread(target=uploadThread,
                                              args=(onion,data))
                         t.start()
