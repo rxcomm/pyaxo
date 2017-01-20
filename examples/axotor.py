@@ -7,7 +7,7 @@ import os
 import curses
 import socks
 import stem.process
-import wh
+from wh import WHMgr
 import random
 from binascii import a2b_base64 as a2b
 from binascii import b2a_base64 as b2a
@@ -109,9 +109,6 @@ TOR_CLIENT_PORT             = 9154
 TOR_CLIENT_CONTROL_PORT     = 9155
 CLIENT_FILE_TX_PORT         = 2000
 SERVER_FILE_TX_PORT         = 2001
-TOR_CONTROL_PASSWORD        = 'axotor'
-TOR_CONTROL_HASHED_PASSWORD = \
-    '16:0DF8A51D5BB7A97160265FEDD732D47AB07FC143446943D92C2C584673'
 
 # An attempt to limit the damage from this bug in curses:
 # https://bugs.python.org/issue13051
@@ -473,7 +470,7 @@ def tor(port, controlport, tor_dir, descriptor_cookie):
                   'SocksPort'  : str(port),
                   'Log'        : [ 'NOTICE stdout', 'ERR file /tmp/tor_error_log', ],
                   'DataDirectory' : tor_dir,
-                  'HashedControlPassword' : TOR_CONTROL_HASHED_PASSWORD,
+                  'CookieAuthentication': '1',
                   'HidServAuth': descriptor_cookie,
                  },
         completion_percent = 100,
@@ -491,7 +488,7 @@ def clientController(descriptor_cookie, onion):
     controller = Controller.from_port(address='127.0.0.1',
                                       port=TOR_CLIENT_CONTROL_PORT)
     try:
-        controller.authenticate(password=TOR_CONTROL_PASSWORD),
+        controller.authenticate()
         controller.set_options([
             ('HidServAuth', onion + ' ' + descriptor_cookie),
             ])
@@ -507,7 +504,7 @@ def ephemeralHiddenService():
 
     controller = Controller.from_port(address='127.0.0.1',
                                       port=TOR_SERVER_CONTROL_PORT)
-    controller.authenticate(password=TOR_CONTROL_PASSWORD)
+    controller.authenticate()
     try:
         hs = controller.create_ephemeral_hidden_service([PORT,
                                                         CLIENT_FILE_TX_PORT,
@@ -519,13 +516,18 @@ def ephemeralHiddenService():
     return controller, hs.client_auth['axotor'], hs.service_id +'.onion'
 
 def credentialsSend(mkey, cookie, ratchet_key, onion):
-    w = wh.send(unicode(mkey),
-                cookie+'___'+ratchet_key+'___'+onion,
-                TOR_SERVER_PORT)
-    return w
+    w = WHMgr(unicode(mkey),
+              cookie+'___'+ratchet_key+'___'+onion,
+              u'tcp:127.0.0.1:'+unicode(TOR_SERVER_CONTROL_PORT))
+    w.send()
+    w.run()
+    return w.confirmed
 
 def credentialsReceive(mkey):
-    return wh.receive(unicode(mkey), TOR_CLIENT_PORT)
+    w = WHMgr(unicode(mkey), None, u'tcp:127.0.0.1:'+unicode(TOR_CLIENT_CONTROL_PORT))
+    w.receive()
+    w.run()
+    return w.data
 
 def smptest(secret, sock, is_server):
     global axolotl
