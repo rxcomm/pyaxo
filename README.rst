@@ -23,8 +23,11 @@ Installation instructions
 -------------------------
 Make sure that you have the following::
 
-    sudo apt-get install python-dev libffi-dev # If using Debian/Ubuntu
-    sudo yum install python-devel redhat-rpm-config libffi-devel # If using Fedora
+    # If using Debian/Ubuntu
+    sudo apt-get install gcc libffi-dev libsodium-dev python-dev
+
+    # If using Fedora
+    sudo yum install gcc libffi-devel libsodium-devel python-devel redhat-rpm-config
 
 pyaxo also uses `pynacl`_ and `passlib`_,
 but these packages will be downloaded and installed automatically by
