@@ -4,10 +4,7 @@ except ImportError:
     from distutils.core import setup
 
 import versioneer
-from glob import glob
 
-
-BASE_DIRECTORY = '/usr/share/pyaxo'
 
 setup(
     name='pyaxo',
@@ -23,12 +20,5 @@ setup(
     install_requires=[
         'passlib>=1.6.1',
         'pynacl>=1.0.1',
-    ],
-    data_files=[
-        (BASE_DIRECTORY + '/examples', glob('examples/*')),
-        (BASE_DIRECTORY + '/tests', glob('tests/*')),
-        (BASE_DIRECTORY + '/utilities', glob('utilities/*')),
-        (BASE_DIRECTORY, ['COPYING']),
-        (BASE_DIRECTORY, ['README.rst']),
     ],
 )
