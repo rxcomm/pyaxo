@@ -317,6 +317,7 @@ class Axolotl(object):
 class AxolotlConversation:
     def __init__(self, axolotl, keys, mode, staged_hk_mk=None):
         self._axolotl = axolotl
+        self.lock = Lock()
         self.keys = keys
         self.mode = mode
         self.staged_hk_mk = staged_hk_mk or dict()
@@ -407,6 +408,7 @@ class AxolotlConversation:
         ckp = hash_(ckp + '1')
         return ckp, mk
 
+    @sync
     def encrypt(self, plaintext):
         if self.ratchet_flag:
             self.keys['DHRs_priv'], self.keys['DHRs'] = generate_keypair()
@@ -432,6 +434,7 @@ class AxolotlConversation:
         self.keys['CKs'] = hash_(self.keys['CKs'] + '1')
         return msg
 
+    @sync
     def decrypt(self, msg):
         pad = msg[HEADER_LEN-HEADER_PAD_NUM_LEN:HEADER_LEN]
         pad_length = ord(pad)
