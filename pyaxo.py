@@ -80,7 +80,6 @@ class Axolotl(object):
         self.state['DHRs_priv'], self.state['DHRs'] = generate_keypair()
         self.handshakeKey, self.handshakePKey = generate_keypair()
         self.storeTime = 2*86400 # minimum time (seconds) to store missed ephemeral message keys
-        self.lock = Lock()
         self.persistence = SqlitePersistence(self.dbname,
                                              self.dbpassphrase,
                                              self.storeTime,
@@ -283,7 +282,6 @@ class Axolotl(object):
     def saveState(self):
         self.save_conversation(self.conversation)
 
-    @sync
     def save_conversation(self, conversation):
         self.persistence.save_conversation(conversation)
 
@@ -295,17 +293,14 @@ class Axolotl(object):
         else:
             return False
 
-    @sync
     def load_conversation(self, other_name, name=None):
         return self.persistence.load_conversation(self,
                                                   name or self.name,
                                                   other_name)
 
-    @sync
     def delete_conversation(self, conversation):
         return self.persistence.delete_conversation(conversation)
 
-    @sync
     def get_other_names(self):
         return self.persistence.get_other_names(self.name)
 
@@ -582,6 +577,7 @@ class SkippedMessageKey:
 class SqlitePersistence(object):
     def __init__(self, dbname, dbpassphrase, store_time, nonthreaded):
         super(SqlitePersistence, self).__init__()
+        self.lock = Lock()
         self.dbname = dbname
         self.dbpassphrase = dbpassphrase
         self.store_time = store_time
@@ -733,6 +729,7 @@ class SqlitePersistence(object):
                 with open(self.dbname, 'w') as f:
                     f.write(sql)
 
+    @sync
     def save_conversation(self, conversation):
         HKs = 0 if conversation.keys['HKs'] is None else b2a(conversation.keys['HKs'])
         HKr = 0 if conversation.keys['HKr'] is None else b2a(conversation.keys['HKr'])
@@ -795,6 +792,7 @@ class SqlitePersistence(object):
         self._commit_skipped_mk(conversation)
         self.write_db()
 
+    @sync
     def load_conversation(self, axolotl, name, other_name):
         with self.db as db:
             cur = db.cursor()
@@ -843,6 +841,7 @@ class SqlitePersistence(object):
             # if no matches
             return None
 
+    @sync
     def delete_conversation(self, conversation):
         with self.db as db:
             db.execute('''
@@ -857,6 +856,7 @@ class SqlitePersistence(object):
                     other_identity = ?''', (conversation.other_name,))
         self.write_db()
 
+    @sync
     def get_other_names(self, name):
         with self.db as db:
             rows = db.execute('''
