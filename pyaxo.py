@@ -27,6 +27,7 @@ import os
 import sqlite3
 import sys
 from collections import namedtuple
+from functools import wraps
 from getpass import getpass
 from threading import Lock
 from time import time
@@ -52,6 +53,15 @@ SALTS = {'RK': b'\x00',
 HEADER_LEN = 80
 HEADER_PAD_NUM_LEN = 1
 HEADER_COUNT_NUM_LEN = 3
+
+
+def sync(f):
+    @wraps(f)
+    def synced_f(self, *args, **kwargs):
+        with self.lock:
+            return f(self, *args, **kwargs)
+    return synced_f
+
 
 class Axolotl(object):
 
@@ -273,9 +283,9 @@ class Axolotl(object):
     def saveState(self):
         self.save_conversation(self.conversation)
 
+    @sync
     def save_conversation(self, conversation):
-        with self.lock:
-            self.persistence.save_conversation(conversation)
+        self.persistence.save_conversation(conversation)
 
     def loadState(self, name, other_name):
         self.persistence.db = self.openDB()
@@ -285,19 +295,19 @@ class Axolotl(object):
         else:
             return False
 
+    @sync
     def load_conversation(self, other_name, name=None):
-        with self.lock:
-            return self.persistence.load_conversation(self,
-                                                      name or self.name,
-                                                      other_name)
+        return self.persistence.load_conversation(self,
+                                                  name or self.name,
+                                                  other_name)
 
+    @sync
     def delete_conversation(self, conversation):
-        with self.lock:
-            return self.persistence.delete_conversation(conversation)
+        return self.persistence.delete_conversation(conversation)
 
+    @sync
     def get_other_names(self):
-        with self.lock:
-            return self.persistence.get_other_names(self.name)
+        return self.persistence.get_other_names(self.name)
 
     def openDB(self):
         return self.persistence._open_db()
