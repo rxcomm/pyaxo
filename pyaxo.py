@@ -49,9 +49,9 @@ SALTS = {'RK': b'\x00',
          'CK': {ALICE_MODE: b'\x05', BOB_MODE: b'\x06'},
          'CONVid': b'\x07'}
 
-HEADER_LEN = 80
-HEADER_PAD_NUM_LEN = 1
-HEADER_COUNT_NUM_LEN = 3
+HEADER_LEN = 85
+HEADER_PAD_NUM_LEN = 0
+HEADER_COUNT_NUM_LEN = 6
 
 class Axolotl(object):
 
