@@ -26,6 +26,7 @@ import errno
 import os
 import sqlite3
 import sys
+import struct
 from collections import namedtuple
 from getpass import getpass
 from threading import Lock
@@ -49,9 +50,9 @@ SALTS = {'RK': b'\x00',
          'CK': {ALICE_MODE: b'\x05', BOB_MODE: b'\x06'},
          'CONVid': b'\x07'}
 
-HEADER_LEN = 85
-HEADER_PAD_NUM_LEN = 0
-HEADER_COUNT_NUM_LEN = 6
+HEADER_LEN = 84
+HEADER_PAD_NUM_LEN = 1
+HEADER_COUNT_NUM_LEN = 4
 
 class Axolotl(object):
 
@@ -416,8 +417,7 @@ class AxolotlConversation:
         mk = hash_(self.keys['CKs'] + '0')
         msg1 = encrypt_symmetric(
             self.keys['HKs'],
-            str(self.ns).zfill(HEADER_COUNT_NUM_LEN) +
-            str(self.pns).zfill(HEADER_COUNT_NUM_LEN) +
+            struct.pack('>I', self.ns) + struct.pack('>I', self.pns) +
             self.keys['DHRs'])
         msg2 = encrypt_symmetric(mk, plaintext)
         pad_length = HEADER_LEN - len(msg1)
@@ -443,7 +443,7 @@ class AxolotlConversation:
             except CryptoError:
                 pass
         if header and header != '':
-            Np = int(header[:HEADER_COUNT_NUM_LEN])
+            Np = struct.unpack('>I', header[:HEADER_COUNT_NUM_LEN])[0]
             CKp, mk = self._stage_skipped_mk(self.keys['HKr'], self.nr, Np, self.keys['CKr'])
             try:
                 body = decrypt_symmetric(mk, msg[HEADER_LEN:])
@@ -458,8 +458,8 @@ class AxolotlConversation:
             if self.ratchet_flag or not header or header == '':
                 print 'Undecipherable message'
                 sys.exit(1)
-            Np = int(header[:HEADER_COUNT_NUM_LEN])
-            PNp = int(header[HEADER_COUNT_NUM_LEN:HEADER_COUNT_NUM_LEN*2])
+            Np = struct.unpack('>I', header[:HEADER_COUNT_NUM_LEN])[0]
+            PNp = struct.unpack('>I', header[HEADER_COUNT_NUM_LEN:HEADER_COUNT_NUM_LEN*2])[0]
             DHRp = header[HEADER_COUNT_NUM_LEN*2:]
             if self.keys['CKr']:
                 self._stage_skipped_mk(self.keys['HKr'], self.nr, PNp, self.keys['CKr'])
