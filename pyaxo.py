@@ -28,6 +28,7 @@ import sqlite3
 import sys
 import struct
 from collections import namedtuple
+from functools import wraps
 from getpass import getpass
 from threading import Lock
 from time import time
@@ -54,6 +55,15 @@ HEADER_LEN = 84
 HEADER_PAD_NUM_LEN = 1
 HEADER_COUNT_NUM_LEN = 4
 
+
+def sync(f):
+    @wraps(f)
+    def synced_f(self, *args, **kwargs):
+        with self.lock:
+            return f(self, *args, **kwargs)
+    return synced_f
+
+
 class Axolotl(object):
 
     def __init__(self, name, dbname='axolotl.db', dbpassphrase='', nonthreaded_sql=True):
@@ -71,7 +81,6 @@ class Axolotl(object):
         self.state['DHRs_priv'], self.state['DHRs'] = generate_keypair()
         self.handshakeKey, self.handshakePKey = generate_keypair()
         self.storeTime = 2*86400 # minimum time (seconds) to store missed ephemeral message keys
-        self.lock = Lock()
         self.persistence = SqlitePersistence(self.dbname,
                                              self.dbpassphrase,
                                              self.storeTime,
@@ -275,8 +284,7 @@ class Axolotl(object):
         self.save_conversation(self.conversation)
 
     def save_conversation(self, conversation):
-        with self.lock:
-            self.persistence.save_conversation(conversation)
+        self.persistence.save_conversation(conversation)
 
     def loadState(self, name, other_name):
         self.persistence.db = self.openDB()
@@ -287,18 +295,15 @@ class Axolotl(object):
             return False
 
     def load_conversation(self, other_name, name=None):
-        with self.lock:
-            return self.persistence.load_conversation(self,
-                                                      name or self.name,
-                                                      other_name)
+        return self.persistence.load_conversation(self,
+                                                  name or self.name,
+                                                  other_name)
 
     def delete_conversation(self, conversation):
-        with self.lock:
-            return self.persistence.delete_conversation(conversation)
+        return self.persistence.delete_conversation(conversation)
 
     def get_other_names(self):
-        with self.lock:
-            return self.persistence.get_other_names(self.name)
+        return self.persistence.get_other_names(self.name)
 
     def openDB(self):
         return self.persistence._open_db()
@@ -313,6 +318,7 @@ class Axolotl(object):
 class AxolotlConversation:
     def __init__(self, axolotl, keys, mode, staged_hk_mk=None):
         self._axolotl = axolotl
+        self.lock = Lock()
         self.keys = keys
         self.mode = mode
         self.staged_hk_mk = staged_hk_mk or dict()
@@ -403,6 +409,7 @@ class AxolotlConversation:
         ckp = hash_(ckp + '1')
         return ckp, mk
 
+    @sync
     def encrypt(self, plaintext):
         if self.ratchet_flag:
             self.keys['DHRs_priv'], self.keys['DHRs'] = generate_keypair()
@@ -427,6 +434,7 @@ class AxolotlConversation:
         self.keys['CKs'] = hash_(self.keys['CKs'] + '1')
         return msg
 
+    @sync
     def decrypt(self, msg):
         pad = msg[HEADER_LEN-HEADER_PAD_NUM_LEN:HEADER_LEN]
         pad_length = ord(pad)
@@ -572,6 +580,7 @@ class SkippedMessageKey:
 class SqlitePersistence(object):
     def __init__(self, dbname, dbpassphrase, store_time, nonthreaded):
         super(SqlitePersistence, self).__init__()
+        self.lock = Lock()
         self.dbname = dbname
         self.dbpassphrase = dbpassphrase
         self.store_time = store_time
@@ -723,6 +732,7 @@ class SqlitePersistence(object):
                 with open(self.dbname, 'w') as f:
                     f.write(sql)
 
+    @sync
     def save_conversation(self, conversation):
         HKs = 0 if conversation.keys['HKs'] is None else b2a(conversation.keys['HKs'])
         HKr = 0 if conversation.keys['HKr'] is None else b2a(conversation.keys['HKr'])
@@ -785,6 +795,7 @@ class SqlitePersistence(object):
         self._commit_skipped_mk(conversation)
         self.write_db()
 
+    @sync
     def load_conversation(self, axolotl, name, other_name):
         with self.db as db:
             cur = db.cursor()
@@ -833,6 +844,7 @@ class SqlitePersistence(object):
             # if no matches
             return None
 
+    @sync
     def delete_conversation(self, conversation):
         with self.db as db:
             db.execute('''
@@ -847,6 +859,7 @@ class SqlitePersistence(object):
                     other_identity = ?''', (conversation.other_name,))
         self.write_db()
 
+    @sync
     def get_other_names(self, name):
         with self.db as db:
             rows = db.execute('''
