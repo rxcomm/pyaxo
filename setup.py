@@ -21,4 +21,10 @@ setup(
         'passlib>=1.6.1',
         'pynacl>=1.0.1',
     ],
+    setup_requires=[
+        'pytest-runner',
+    ],
+    tests_require=[
+        'pytest',
+    ],
 )
