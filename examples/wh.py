@@ -4,8 +4,8 @@ import hashlib as h
 from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks
 from wormhole.cli.public_relay import RENDEZVOUS_RELAY
-from wormhole.wormhole import wormhole
-from wormhole.tor_manager import TorManager
+import wormhole
+from wormhole.tor_manager import get_tor
 from wormhole.timing import DebugTiming
 
 class WHMgr(object):
@@ -16,10 +16,14 @@ class WHMgr(object):
         self._timing = DebugTiming()
         self.confirmed = False
         self.data = data
-        self._tmgr = TorManager(self._reactor,
-                                False,
-                                self._tor_port,
-                                timing=self._timing)
+
+    @inlineCallbacks
+    def start_tor(self):
+        self._tor = yield get_tor(self._reactor,
+                                  launch_tor=False,
+                                  tor_control_port=self._tor_port,
+                                  timing=self._timing)
+        return
 
     @inlineCallbacks
     def send(self):
@@ -31,19 +35,14 @@ class WHMgr(object):
             if input_message == 'Confirmed!':
                 self.confirmed = True
 
-        if not self._tmgr.tor_available():
-            print 'tor not available'
-            os._exit(1)
-        yield self._tmgr.start()
-        self._w = wormhole(u'axotor', RENDEZVOUS_RELAY, self._reactor,
-                           self._tmgr, timing=self._timing)
+        yield self.start_tor()
+        self._w = wormhole.create(u'axotor', RENDEZVOUS_RELAY, self._reactor,
+                                  tor=self._tor, timing=self._timing)
         self._w.set_code(self._code)
-        self._w.send(self.data+h.sha256(self.data).hexdigest())
-        self._d = self._w.get()
-        self._d.addCallback(_confirm)
-        self._d.addCallback(lambda _: self._w.close())
-        self._d.addCallback(lambda _: self._reactor.stop())
-        yield self._d
+        self._w.send_message(self.data+h.sha256(self.data).hexdigest())
+        yield self._w.get_message().addCallback(_confirm)
+        yield self._w.close()
+        self._reactor.stop()
         return
 
     @inlineCallbacks
@@ -51,26 +50,21 @@ class WHMgr(object):
         """I receive data+hash, check for a match, confirm or not
         confirm to the sender, and return the data payload.
         """
-        def _receive(inbound_message):
-            self.data = inbound_message[:-64]
-            _hash = inbound_message[-64:]
+        def _receive(input_message):
+            self.data = input_message[:-64]
+            _hash = input_message[-64:]
             if h.sha256(self.data).hexdigest() == _hash:
-                self._w.send('Confirmed!')
+                self._w.send_message('Confirmed!')
             else:
-                self._w.send('Not Confirmed!')
+                self._w.send_message('Not Confirmed!')
 
-        if not self._tmgr.tor_available():
-            print 'tor not available'
-            os._exit(1)
-        yield self._tmgr.start()
-        self._w = wormhole(u"axotor", RENDEZVOUS_RELAY, self._reactor,
-                           self._tmgr, timing=self._timing)
+        yield self.start_tor()
+        self._w = wormhole.create(u'axotor', RENDEZVOUS_RELAY, self._reactor,
+                                  tor=self._tor, timing=self._timing)
         self._w.set_code(self._code)
-        self._d = self._w.get()
-        self._d.addCallback(_receive)
-        self._d.addCallback(lambda _: self._w.close())
-        self._d.addCallback(lambda _: self._reactor.stop())
-        yield self._d
+        yield self._w.get_message().addCallback(_receive)
+        yield self._w.close()
+        self._reactor.stop()
         return
 
     def run(self):
