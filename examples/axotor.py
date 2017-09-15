@@ -65,11 +65,11 @@ to remind you that the session is unauthenticated.
 
 The Axolotl protocol is actually authenticated through the key
 agreement process when the credentials are created. You may wonder why
-the additional SMP authentication step is included. The answer lies in
-the fact that between sessions, the key databases are stored on disk
-and - at least in principle - could be tampered with. This SMP step
-assures that the other party to your session is actually who you think
-it is.
+the additional SMP authentication step is included. This SMP step
+is another way to assure you that the other party to your session is
+actually who you think it is.
+
+In axotor.py, no database or key is ever stored to disk.
 
 Usage:
 1. One side starts the server with:
@@ -87,7 +87,7 @@ Usage:
 
 Axochat requires the Axolotl module at https://github.com/rxcomm/pyaxo
 
-Copyright (C) 2015-2016 by David R. Andersen <k0rx@RXcomm.net>
+Copyright (C) 2015-2017 by David R. Andersen <k0rx@RXcomm.net>
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -536,21 +536,21 @@ def smptest(secret, sock, is_server):
 
     if is_server:
         # Do the SMP protocol
-        buffer = sock.recv(2435, socket.MSG_WAITALL)
+        buffer = sock.recv(2439, socket.MSG_WAITALL)
         padlength = ord(buffer[-1:])
         buffer = axolotl.decrypt(buffer[:-padlength])
         buffer = smp.step2(buffer)
         buffer = axolotl.encrypt(buffer)
-        padlength = 4535-len(buffer)
+        padlength = 4539-len(buffer)
         buffer = buffer+padlength*chr(padlength) # pad to fixed length
         sock.send(buffer)
 
-        buffer = sock.recv(3465, socket.MSG_WAITALL)
+        buffer = sock.recv(3469, socket.MSG_WAITALL)
         padlength = ord(buffer[-1:])
         buffer = axolotl.decrypt(buffer[:-padlength])
         buffer = smp.step4(buffer)
         buffer = axolotl.encrypt(buffer)
-        padlength = 1365-len(buffer)
+        padlength = 1369-len(buffer)
         buffer = buffer+padlength*chr(padlength) # pad to fixed length
         sock.send(buffer)
 
@@ -558,20 +558,20 @@ def smptest(secret, sock, is_server):
         # Do the SMP protocol
         buffer = smp.step1()
         buffer = axolotl.encrypt(buffer)
-        padlength = 2435-len(buffer)
+        padlength = 2439-len(buffer)
         buffer = buffer+padlength*chr(padlength) # pad to fixed length
         sock.send(buffer)
 
-        buffer = sock.recv(4535, socket.MSG_WAITALL)
+        buffer = sock.recv(4539, socket.MSG_WAITALL)
         padlength = ord(buffer[-1:])
         buffer = axolotl.decrypt(buffer[:-padlength])
         buffer = smp.step3(buffer)
         buffer = axolotl.encrypt(buffer)
-        padlength = 3465-len(buffer)
+        padlength = 3469-len(buffer)
         buffer = buffer+padlength*chr(padlength) # pad to fixed length
         sock.send(buffer)
 
-        buffer = sock.recv(1365, socket.MSG_WAITALL)
+        buffer = sock.recv(1369, socket.MSG_WAITALL)
         padlength = ord(buffer[-1:])
         buffer = axolotl.decrypt(buffer[:-padlength])
         smp.step5(buffer)
@@ -591,7 +591,7 @@ def doSMP(sock, is_server):
     ans = raw_input('Run SMP authentication step? (y/N)? ')
     if not ans == 'y': ans = 'N'
     sock.send(axolotl.encrypt(ans))
-    data = sock.recv(121, socket.MSG_WAITALL)
+    data = sock.recv(125, socket.MSG_WAITALL)
     data = axolotl.decrypt(data)
     if ans == 'N' and data == 'y':
         print 'Other party requested SMP authentication'
