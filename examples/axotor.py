@@ -65,11 +65,11 @@ to remind you that the session is unauthenticated.
 
 The Axolotl protocol is actually authenticated through the key
 agreement process when the credentials are created. You may wonder why
-the additional SMP authentication step is included. The answer lies in
-the fact that between sessions, the key databases are stored on disk
-and - at least in principle - could be tampered with. This SMP step
-assures that the other party to your session is actually who you think
-it is.
+the additional SMP authentication step is included. This SMP step
+is another way to assure you that the other party to your session is
+actually who you think it is.
+
+In axotor.py, no database or key is ever stored to disk.
 
 Usage:
 1. One side starts the server with:
@@ -87,7 +87,7 @@ Usage:
 
 Axochat requires the Axolotl module at https://github.com/rxcomm/pyaxo
 
-Copyright (C) 2015-2016 by David R. Andersen <k0rx@RXcomm.net>
+Copyright (C) 2015-2017 by David R. Andersen <k0rx@RXcomm.net>
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
